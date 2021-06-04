@@ -1,0 +1,15 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue"
+        ],
+        "Resource": [
+            "${db_password_arn}",
+            "${db_tdp_arn}"
+        ]
+      }
+    ]
+  }
