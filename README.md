@@ -18,15 +18,9 @@ This architecture can be pricey due to RDS instances.
 
 ``` bash
 terraform init -upgrade \
-<<<<<<< HEAD
-    -backend-config="bucket= ligoj-terraform-bucket" \
-    -backend-config="key= ligoj.tfstate" \
-    -backend-config="region= eu-west-1" \
-=======
     -backend-config="bucket=ligoj-terraform-bucket" \
     -backend-config="key=ligoj.tfstate" \
     -backend-config="region=eu-west-1" \
->>>>>>> a740feef74e41d4fb038e72bc6db02e049bcbcc4
     -backend-config="profile=ligoj"
 ```
 
@@ -46,21 +40,9 @@ cognito_email_filter_message = "Only internal staff can signup to this applicati
 cognito_admin = "ligoj-admin@internal.com"
 ```
 
-Terraform deployment
+# Terraform deployment
 
 ``` bash
 terraform init -backend-config="profile=ligoj" -backend-config="profile=ligoj" -reconfigure
 terraform apply -var-file="main.sample.tfvars" -var profile="ligoj" -auto-approve
-```
-
-
-``` bash
-aws sso login --profile kloudy-website
-terraform init -upgrade \
-    -backend-config="bucket=terraform.ligoj.io" \
-    -backend-config="key=ligoj-saas.tfstate" \
-    -backend-config="region=eu-west-3" \
-    -backend-config="profile=kloudy-website" \
-    -reconfigure
-terraform apply -var-file="main-private.saas.tfvars" -auto-approve
 ```
