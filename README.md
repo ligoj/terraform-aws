@@ -18,9 +18,15 @@ This architecture can be pricey due to RDS instances.
 
 ``` bash
 terraform init -upgrade \
+<<<<<<< HEAD
     -backend-config="bucket= ligoj-terraform-bucket" \
     -backend-config="key= ligoj.tfstate" \
     -backend-config="region= eu-west-1" \
+=======
+    -backend-config="bucket=ligoj-terraform-bucket" \
+    -backend-config="key=ligoj.tfstate" \
+    -backend-config="region=eu-west-1" \
+>>>>>>> a740feef74e41d4fb038e72bc6db02e049bcbcc4
     -backend-config="profile=ligoj"
 ```
 
