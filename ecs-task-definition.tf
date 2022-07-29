@@ -8,7 +8,7 @@ resource aws_ecs_task_definition main {
   container_definitions    = <<EOF
   [
     ${templatefile("task-definition/ligoj-ui.json", merge(local.tags, local.container_definition, {context_path = var.context_path}))},
-    ${templatefile("task-definition/ligoj-api.json", merge(local.tags, local.container_definition, { db_tdp_arn = local.db_tdp_arn, db_user = local.db_user, db_password_arn = local.db_password_arn, db_host = local.db_host,ligoj_plugins = var.ligoj_plugins }))}
+    ${templatefile("task-definition/ligoj-api.json", merge(local.tags, local.container_definition, { cpu = var.cpu , db_tdp_arn = local.db_tdp_arn, db_user = local.db_user, db_password_arn = local.db_password_arn, db_host = local.db_host,ligoj_plugins = var.ligoj_plugins }))}
   ]
   EOF
   volume {
