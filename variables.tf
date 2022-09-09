@@ -39,10 +39,10 @@ variable "desired_count" {
   default = 1
 }
 variable "cpu" {
-  default = "2048"
+  default = 2
 }
 variable "ram" {
-  default = "8192"
+  default = 8192
 }
 variable "container_route_private" {
   default = {

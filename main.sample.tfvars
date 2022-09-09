@@ -5,12 +5,12 @@ account="123456789012"
 profile="my-profile"
 
 # For steady phase
-cpu="2048"
-ram="8192"
+cpu=2
+ram=8192
 
 # For import phase
-#cpu="4096"
-#ram="8192"
+#cpu=4
+#ram=8192
 #aurora_min_capacity=16
 
 cognito_dns="login.ligoj-rec.corp.com"

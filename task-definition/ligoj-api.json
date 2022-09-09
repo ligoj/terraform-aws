@@ -22,7 +22,7 @@
     },
     {
       "name": "CUSTOM_OPTS",
-      "value": " -Djdbc.host=${db_host} -Djdbc.user=${db_user} -Dligoj.plugin.install=${ligoj_plugins} -Dserver.forward-headers-strategy=NATIVE"
+      "value": " -Djdbc.host=${db_host} -Djdbc.user=${db_user} -Dligoj.plugin.install=${ligoj_plugins} -Dserver.forward-headers-strategy=NATIVE -XX:ActiveProcessorCount=${nb_cpu}"
     }
   ],
   "resourceRequirements": null,
