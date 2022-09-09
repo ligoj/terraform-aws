@@ -7,6 +7,15 @@ const secretsmanager = new AWS.SecretsManager({
 const https = require('https');
 const qs = require('querystring');
 
+const API_ENDPOINT = process.env.API_ENDPOINT.replace(/\/$/, '');
+const API_HOST = API_ENDPOINT.split("//")[1].split("/")[0];
+const API_PATH = API_ENDPOINT.split("//")[1].split("/").slice(1).join("/");
+const SECRET_ARN = process.env.SECRET_ARN;
+const GRANT_ROLE = process.env.GRANT_ROLE;
+const CREATE_PROJECT = process.env.CREATE_PROJECT == 'true';
+const CREATE_SUBSCRIPTION = JSON.parse(process.env.CREATE_SUBSCRIPTION || '[]');
+const ADD_RESTRICTED_URL = true;
+
 async function callApi(method, path, parameters, data, apiContext) {
     let credentials = apiContext.credentials;
     const qsString = qs.stringify({
@@ -49,23 +58,17 @@ async function callApi(method, path, parameters, data, apiContext) {
 exports.handler = async (event, context) => {
     console.log(JSON.stringify(event));
     console.log(JSON.stringify(context));
-
-    let endpoint = process.env.API_ENDPOINT.replace(/\/$/, '');
-    let secretArn = process.env.SECRET_ARN;
-    let grantRole = process.env.GRANT_ROLE;
-    let createProject = process.env.CREATE_PROJECT == 'true';
-    let createSubscriptions = JSON.parse(process.env.CREATE_SUBSCRIPTION || '[]');
     let username = event.userName;
 
     // Get API key from secret
     let secretHolder = await secretsmanager.getSecretValue({
-        SecretId: secretArn
+        SecretId: SECRET_ARN
     }).promise();
     let credentials = JSON.parse(secretHolder.SecretString);
     console.log("secretData", credentials);
     let apiOptions = {
-        host: endpoint.split("//")[1].split("/")[0],
-        path: endpoint.split("//")[1].split("/").slice(1).join("/"),
+        host: API_HOST,
+        path: API_PATH,
         headers: {
             'content-type': 'application/json'
         },
@@ -76,7 +79,7 @@ exports.handler = async (event, context) => {
     };
 
     try {
-        await completeData(apiContext, username, event.request.userAttributes.email, grantRole, createProject, createSubscriptions);
+        await completeData(apiContext, username, event.request.userAttributes.email, GRANT_ROLE, CREATE_PROJECT, CREATE_SUBSCRIPTION);
     } catch (e) {
         console.log('Application welcome creation failed', e);
     }
@@ -104,12 +107,12 @@ async function completeData(apiContext, username, email, grantRole, createProjec
         }
     } else {
         // Create user
-        let userCreate = await callApi('POST', `system/user`, null, { login: username, roles: grantRole ? [...await getRoleByName(apiContext, grantRole)] : [] }, apiContext);
+        const userCreate = await callApi('POST', `system/user`, null, { login: username, roles: grantRole ? [...await getRoleByName(apiContext, grantRole)] : [] }, apiContext);
         console.log("User created", userCreate);
     }
 
     if (createProject) {
-        // Create the projet owned by this user
+        // Create the project owned by this user
         let projectKey = `welcome-${username}`;
         let project = await callApi('GET', `project/${projectKey}`, null, null, apiContext);
         let projectId = 0;
@@ -117,18 +120,26 @@ async function completeData(apiContext, username, email, grantRole, createProjec
         if (project === null) {
             // Project does not exist yet, create it
             let projectName = `Welcome ${email}`;
-            projectId = await callApi('POST', `project`, null, { pkey: projectKey, name: projectName, teamLeader: username , description : `Personal project of ${username}`}, apiContext);
+            projectId = await callApi('POST', `project`, null, { pkey: projectKey, name: projectName, teamLeader: username, description: `Personal project of ${username}` }, apiContext);
             console.log("Project created", projectId);
         } else {
             projectId = project.id;
         }
 
         // Create subscription as needed
-        let subscriptions = createSubscriptions.filter(s1 => project === null || project.subscriptions.filter(s0 => s0.node.id === s1.node).length === 0);
+        const subscriptions = createSubscriptions.filter(s1 => project === null || project.subscriptions.filter(s0 => s0.node.id === s1.node).length === 0);
         for (let s of subscriptions) {
             console.log("Subscription create ...", s);
             let subscriptionId = await callApi('POST', `subscription`, null, Object.assign(Object.assign({ mode: 'create' }, s), { project: projectId, node: s.node, parameters: s.parameters || [] }), apiContext);
             console.log("Subscription created", subscriptionId);
+
+            if (ADD_RESTRICTED_URL && subscriptions.length === 1) {
+                // Add restricted URL for SaaS mode
+                const restrictedHash = `#/home/project/${projectId}/subscription/${subscriptionId}`;
+                await callApi('POST', `system/admin-setting/${encodeURIComponent(username)}/restricted-hash/${encodeURIComponent(restrictedHash)}`, null, null, apiContext);
+                console.log("User setting restricted-hash", userSetting);
+            }
         }
+
     }
 }
