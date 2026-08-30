@@ -1,1 +1,1 @@
-GRANT ALL ON `${db_user}`.* TO '${db_user}'@'%'
+ALTER DATABASE ligoj OWNER TO ${db_user}

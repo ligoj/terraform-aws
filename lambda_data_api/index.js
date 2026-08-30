@@ -1,35 +1,37 @@
 'use strict'
-const mysql = require('mysql2/promise');
-const AWS = require('aws-sdk');
-const REGION = process.env.REGION;
-const LOG_LEVEL = process.env.LOG_LEVEL || 'DEBUG'; // DEBUG, INFO, WARN
+const { Client } = require('pg');
 const DB_HOST = process.env.DB_HOST;
 const DB_DATABASE = process.env.DB_DATABASE;
 
 async function run(database, query, secret, params) {
-    const conn = await mysql.createConnection({
-        database: typeof database === 'undefined' ? DB_DATABASE : database,
+    const client = new Client({
+        // A 'null' database targets the maintenance database, required for CREATE DATABASE
+        database: database === null ? 'postgres' : (database ?? DB_DATABASE),
         host: DB_HOST,
         user: secret.username,
         password: secret.password,
+        ssl: { rejectUnauthorized: false },
     });
-    return await conn.execute(query, params);
+    await client.connect();
+    try {
+        return params ? await client.query(query, params) : await client.query(query);
+    } finally {
+        await client.end();
+    }
 }
 
-exports.handler = async (event, context) => {
-    console.log(`event`, JSON.stringify(event));
-    console.log(`context`, JSON.stringify(context));
-    context.callbackWaitsForEmptyEventLoop = false;
+exports.handler = async (event) => {
+    console.log('event', JSON.stringify({ ...event, secret: '***' }));
     const query = Buffer.from(event.query, 'base64').toString('utf-8');
     const secret = JSON.parse(Buffer.from(event.secret, 'base64'));
-    console.log(`query`, query);
-    let result = await run(event.database, query, secret, event.params && Buffer.from(event.params, 'base64'));
-    result = result && result[0] || result;
-    console.log(`result`, result);
-    if (result && result.affectedRows) {
-        return result
+    const params = event.params && JSON.parse(Buffer.from(event.params, 'base64').toString('utf-8'));
+    console.log('query', query);
+    let result = await run(event.database, query, secret, params);
+    // A multi-statement query returns one result per statement: keep the last one
+    result = Array.isArray(result) ? result[result.length - 1] : result;
+    console.log('result', result.command, result.rowCount);
+    if (result.command === 'SELECT') {
+        return { records: result.rows };
     }
-    return result && {
-        records: result,
-    } || {};
+    return { command: result.command, affectedRows: result.rowCount ?? 0 };
 };

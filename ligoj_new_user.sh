@@ -1,9 +1,11 @@
 #!/bin/bash
-# ssh_key_generator - designed to work with the Terraform External Data Source provider
+# Ligoj user provisioning - designed to work with the Terraform External Data Source provider
 #   https://www.terraform.io/docs/providers/external/data_source.html
-#  Inpiration: https://gist.github.com/irvingpop/968464132ded25a206ced835d50afa6b
+#  Inspiration: https://gist.github.com/irvingpop/968464132ded25a206ced835d50afa6b
 #  by Irving Popovetsky <irving@popovetsky.com>
 #
+# Executes PostgreSQL statements against the Aurora cluster, either through the
+# data API Lambda (default) or through the RDS Data API (USE_DATA_API=1).
 
 MESSAGES="[]"
 LOG_FILE="ligoj_new_user.log"
@@ -24,9 +26,6 @@ function error_exit() {
 function check_deps() {
   test -f $(which aws) || error_exit "aws command not detected in path, please install it"
   test -f $(which jq) || error_exit "jq command not detected in path, please install it"
-  if [ "$USE_DATA_API" != "1" ]; then
-    test -f $(which mysql) || error_exit "mysql command not detected in path, please install it"
-  fi
 }
 
 function parse_input() {
@@ -96,20 +95,9 @@ function execute_sql() {
 }
 
 function next_id() {
+  # Hibernate maps the entities to native PostgreSQL sequences named '<table>_seq'
   local TABLE="$1"
-  local next_id="$(select_from "SELECT next_val as id FROM ${TABLE}_seq" "Unable to get the next id of $TABLE table")"
-  increment_next_id "$TABLE"
-  echo "$next_id"
-}
-
-function increment_next_id() {
-  local TABLE="$1"
-  local result="$(execute_sql "UPDATE ${TABLE}_seq SET next_val=next_val+1")"
-  local inserted="$(echo "$result" | jq -r '.affectedRows')"
-  if [ "$inserted" != "1" ]; then
-    error_exit "Unable to get the next id of $TABLE table, -$inserted- affected rows instead of 1"
-    exit 1
-  fi
+  select_from "SELECT nextval('${TABLE}_seq') AS id" "Unable to get the next id of $TABLE table"
 }
 
 function insert() {
@@ -139,7 +127,7 @@ function create_user() {
 
   # Check user
   log_info "Check user $USERNAME exists..."
-  local result="$(execute_sql "SELECT 1 FROM s_user WHERE login = \"$USERNAME\"")"
+  local result="$(execute_sql "SELECT 1 FROM s_user WHERE login = '$USERNAME'")"
   local user_exists="$(echo "$result" | jq -r '.records|length')"
 
   # Create user as needed
@@ -147,16 +135,16 @@ function create_user() {
     log_info "User $USERNAME exists"
   else
     log_info "User $USERNAME does not exist"
-    insert "INSERT INTO s_user (login) VALUES (\"$USERNAME\")" "Unable to create user $USERNAME"
+    insert "INSERT INTO s_user (login) VALUES ('$USERNAME')" "Unable to create user $USERNAME"
   fi
 
   # Check role
   log_info "Check role $ROLE_ADMIN..."
-  local role_id="$(select_from 'SELECT id FROM s_role WHERE name = "'$ROLE_ADMIN'"' 'Role '$ROLE_ADMIN' does not exist yet')"
+  local role_id="$(select_from "SELECT id FROM s_role WHERE name = '$ROLE_ADMIN'" "Role $ROLE_ADMIN does not exist yet")"
 
   # Associate ADMIN role
   log_info "Check role assignment for $ROLE_ADMIN role ($role_id) and user $USERNAME ..."
-  result="$(execute_sql "SELECT 1 FROM s_role_assignment WHERE user = \"$USERNAME\" AND role = $role_id")"
+  result="$(execute_sql "SELECT 1 FROM s_role_assignment WHERE \"user\" = '$USERNAME' AND role = $role_id")"
   local assignment_exists="$(echo "$result" | jq -r '.records|length')"
   if [ "$assignment_exists" == "1" ]; then
     log_info "Role $ROLE_ADMIN already assigned to user $USERNAME"
@@ -164,12 +152,12 @@ function create_user() {
     log_info "Get next role assignment id for $ROLE_ADMIN role ($role_id) and user $USERNAME ..."
     local next_assignment_id="$(next_id s_role_assignment)"
     log_info "Create role assignment ($next_assignment_id) for $ROLE_ADMIN role ($role_id) and user $USERNAME ..."
-    insert "INSERT INTO s_role_assignment (id, role, user) VALUES ($next_assignment_id, $role_id,\"$USERNAME\")" "Unable to associate user $USERNAME to $ROLE_ADMIN role ($role_id)"
+    insert "INSERT INTO s_role_assignment (id, role, \"user\") VALUES ($next_assignment_id, $role_id, '$USERNAME')" "Unable to associate user $USERNAME to $ROLE_ADMIN role ($role_id)"
   fi
 
   # Create API KEY
   log_info "Check API key $API_TOKEN_NAME of user $USERNAME ..."
-  result="$(execute_sql "SELECT 1 AS id FROM s_api_token WHERE name = \"$API_TOKEN_NAME\" AND user = \"$USERNAME\"")"
+  result="$(execute_sql "SELECT 1 AS id FROM s_api_token WHERE name = '$API_TOKEN_NAME' AND \"user\" = '$USERNAME'")"
   local token_exists="$(echo "$result" | jq -r '.records|length')"
   if [ "$token_exists" == "1" ]; then
     log_info "API key $API_TOKEN_NAME of user $USERNAME already exist with value $(echo "$result" | jq -r '.records[0].id')"
@@ -179,7 +167,7 @@ function create_user() {
     local next_api_id="$(next_id s_api_token)"
     # Create the token
     log_info "Create API key ($next_api_id) for user $USERNAME and named $API_TOKEN_NAME ..."
-    insert "INSERT INTO s_api_token (id, name, user, token, hash) VALUES ($next_api_id, \"$API_TOKEN_NAME\",\"$USERNAME\",\"$API_TOKEN\", \"_plain_\")" "Unable to create a token $API_TOKEN_NAME for user $USERNAME"
+    insert "INSERT INTO s_api_token (id, name, \"user\", token, hash) VALUES ($next_api_id, '$API_TOKEN_NAME', '$USERNAME', '$API_TOKEN', '_plain_')" "Unable to create a token $API_TOKEN_NAME for user $USERNAME"
     # Return the given token
     log_info "Created API key $API_TOKEN_NAME to user $USERNAME with value $API_TOKEN"
   fi

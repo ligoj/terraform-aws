@@ -1,14 +1,14 @@
-resource aws_lb main {
+resource "aws_lb" "main" {
   name                       = local.name
   internal                   = false
   load_balancer_type         = "application"
   security_groups            = [aws_security_group.alb.id]
-  subnets                    = aws_subnet.main.*.id
+  subnets                    = aws_subnet.main[*].id
   enable_deletion_protection = false
   tags                       = local.tags
 }
 
-resource aws_lb_listener http {
+resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
   protocol          = "HTTP"
@@ -23,11 +23,11 @@ resource aws_lb_listener http {
     }
   }
 }
-resource aws_lb_listener https {
+resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = aws_acm_certificate_validation.alb.certificate_arn
   default_action {
     type = "fixed-response"
@@ -39,28 +39,29 @@ resource aws_lb_listener https {
   }
 }
 
-resource aws_lb_target_group main {
-  count       = length(keys(var.container_port))
-  name        = "${keys(var.container_port)[count.index]}-${var.environment}"
-  port        = lookup(var.container_port, keys(var.container_port)[count.index], 8080)
+resource "aws_lb_target_group" "main" {
+  for_each    = var.container_port
+  name        = "${each.key}-${var.environment}"
+  port        = each.value
   protocol    = var.container_protocol
   vpc_id      = aws_vpc.main.id
   target_type = "ip"
 
   health_check {
-    path     = lookup(var.container_health, keys(var.container_port)[count.index], "/index.html")
+    path     = lookup(var.container_health, each.key, "/index.html")
     protocol = var.container_protocol
   }
 }
 
-resource aws_lb_listener_rule public {
-  count        = length(var.container_route_public)
+# Priority 10+: unauthenticated paths (themes, logout page, favicon)
+resource "aws_lb_listener_rule" "public" {
+  for_each     = var.container_route_public
   listener_arn = aws_lb_listener.https.arn
-  priority     = 10 + count.index
+  priority     = 10 + index(keys(var.container_route_public), each.key)
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.main[index(keys(var.container_port), keys(var.container_route_public)[count.index])].arn
+    target_group_arn = aws_lb_target_group.main[each.key].arn
   }
   condition {
     host_header {
@@ -69,19 +70,20 @@ resource aws_lb_listener_rule public {
   }
   condition {
     path_pattern {
-      values = lookup(var.container_route_public, keys(var.container_route_public)[count.index], ["/public"])
+      values = each.value
     }
   }
 }
 
-resource aws_lb_listener_rule public_header {
-  count        = length(var.container_route_header)
+# Priority 20+: API access with 'x-api-key' header and 'api-user' query parameter
+resource "aws_lb_listener_rule" "public_header" {
+  for_each     = var.container_route_header
   listener_arn = aws_lb_listener.https.arn
-  priority     = 20 + count.index
+  priority     = 20 + index(keys(var.container_route_header), each.key)
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.main[index(keys(var.container_port), keys(var.container_route_header)[count.index])].arn
+    target_group_arn = aws_lb_target_group.main[each.key].arn
   }
   condition {
     host_header {
@@ -91,27 +93,21 @@ resource aws_lb_listener_rule public_header {
 
   condition {
     http_header {
-      http_header_name = split(":", lookup(var.container_route_header, keys(var.container_route_header)[count.index], "x-api-key:*"))[0]
-      values           = [split(":", lookup(var.container_route_header, keys(var.container_route_header)[count.index], "x-api-key:*"))[1]]
-    }
-  }
-
-  condition {
-    query_string {
-      key   = split(":", lookup(var.container_route_query, keys(var.container_route_query)[count.index], "api-user:*"))[0]
-      value = split(":", lookup(var.container_route_query, keys(var.container_route_query)[count.index], "api-user:*"))[1]
+      http_header_name = split(":", each.value)[0]
+      values           = [split(":", each.value)[1]]
     }
   }
 }
 
-resource aws_lb_listener_rule public_query {
-  count        = length(keys(var.container_route_query))
+# Priority 30+: API access with 'api-key' and 'api-user' query parameters
+resource "aws_lb_listener_rule" "public_query" {
+  for_each     = var.container_route_query
   listener_arn = aws_lb_listener.https.arn
-  priority     = 30 + count.index
+  priority     = 30 + index(keys(var.container_route_query), each.key)
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.main[index(keys(var.container_port), keys(var.container_route_query)[count.index])].arn
+    target_group_arn = aws_lb_target_group.main[each.key].arn
   }
   condition {
     host_header {
@@ -121,22 +117,24 @@ resource aws_lb_listener_rule public_query {
 
   condition {
     query_string {
-      key   = split(":", lookup(var.container_route_query, keys(var.container_route_query)[count.index], "api-key:*"))[0]
-      value = split(":", lookup(var.container_route_query, keys(var.container_route_query)[count.index], "api-key:*"))[1]
+      key   = split(":", each.value)[0]
+      value = split(":", each.value)[1]
     }
   }
 
   condition {
     query_string {
-      key   = split(":", lookup(var.container_route_query, keys(var.container_route_query)[count.index], "api-user:*"))[0]
-      value = split(":", lookup(var.container_route_query, keys(var.container_route_query)[count.index], "api-user:*"))[1]
+      key   = "api-user"
+      value = "*"
     }
   }
 }
-resource aws_lb_listener_rule private {
-  count        = length(keys(var.container_route_private))
+
+# Priority 50+: everything else requires a Cognito authentication
+resource "aws_lb_listener_rule" "private" {
+  for_each     = var.container_route_private
   listener_arn = aws_lb_listener.https.arn
-  priority     = 50 + count.index
+  priority     = 50 + index(keys(var.container_route_private), each.key)
 
   action {
     type = "authenticate-cognito"
@@ -148,7 +146,7 @@ resource aws_lb_listener_rule private {
   }
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.main[index(keys(var.container_port), keys(var.container_route_private)[count.index])].arn
+    target_group_arn = aws_lb_target_group.main[each.key].arn
   }
   condition {
     host_header {
@@ -157,20 +155,19 @@ resource aws_lb_listener_rule private {
   }
   condition {
     path_pattern {
-      values = [lookup(var.container_route_private, keys(var.container_route_private)[count.index], "*")]
+      values = [each.value]
     }
   }
 }
 
-resource aws_security_group alb {
+resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
   description = "Security Group pour ALB"
   vpc_id      = aws_vpc.main.id
   tags        = merge(local.tags, { "Name" = "${local.name}-alb" })
-
 }
 
-resource aws_security_group_rule alb_https {
+resource "aws_security_group_rule" "alb_https" {
   type              = "ingress"
   from_port         = 443
   to_port           = 443
@@ -180,7 +177,7 @@ resource aws_security_group_rule alb_https {
   security_group_id = aws_security_group.alb.id
 }
 
-resource aws_security_group_rule alb_http {
+resource "aws_security_group_rule" "alb_http" {
   type              = "ingress"
   from_port         = 80
   to_port           = 80
@@ -190,7 +187,7 @@ resource aws_security_group_rule alb_http {
   security_group_id = aws_security_group.alb.id
 }
 
-resource aws_security_group_rule alb_egress {
+resource "aws_security_group_rule" "alb_egress" {
   type              = "egress"
   from_port         = 0
   to_port           = 0

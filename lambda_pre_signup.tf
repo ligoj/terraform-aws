@@ -1,11 +1,11 @@
-resource aws_lambda_function pre_sign_up {
-  filename         = ".terraform/lambda_pre_signup.zip"
+resource "aws_lambda_function" "pre_sign_up" {
+  filename         = data.archive_file.pre_sign_up.output_path
   function_name    = local.lambda_pre_sign_up_name
   role             = aws_iam_role.pre_sign_up.arn
   handler          = "index.handler"
   source_code_hash = data.archive_file.pre_sign_up.output_base64sha256
   tags             = local.tags
-  runtime          = "nodejs20.x"
+  runtime          = "nodejs22.x"
   environment {
     variables = {
       ACCEPTED_MAIL       = local.cognito_email_filter
@@ -14,22 +14,22 @@ resource aws_lambda_function pre_sign_up {
   }
 }
 
-data archive_file pre_sign_up {
+data "archive_file" "pre_sign_up" {
   type        = "zip"
-  output_path = ".terraform/lambda_pre_signup.zip"
+  output_path = "${path.module}/.terraform/lambda_pre_signup.zip"
   source {
-    content  = templatefile("lambda_pre_signup.js", local.tags)
+    content  = file("${path.module}/lambda_pre_signup.js")
     filename = "index.js"
   }
 }
 
-resource aws_iam_role pre_sign_up {
+resource "aws_iam_role" "pre_sign_up" {
   name               = local.lambda_pre_sign_up_name
   assume_role_policy = data.aws_iam_policy_document.pre_sign_up.json
   tags               = local.tags
 }
 
-data aws_iam_policy_document pre_sign_up {
+data "aws_iam_policy_document" "pre_sign_up" {
   statement {
     actions = ["sts:AssumeRole"]
 
@@ -40,36 +40,31 @@ data aws_iam_policy_document pre_sign_up {
   }
 }
 
-resource aws_iam_role_policy_attachment pre_sign_up {
+resource "aws_iam_role_policy_attachment" "pre_sign_up" {
   role       = aws_iam_role.pre_sign_up.name
   policy_arn = aws_iam_policy.pre_sign_up.arn
 }
 
-resource aws_iam_policy pre_sign_up {
+resource "aws_iam_policy" "pre_sign_up" {
   name        = local.lambda_pre_sign_up_name
   path        = "/"
   description = "Ligoj Cognito pre-auth check"
 
-  policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Action": [
-        "logs:CreateLogStream",
-        "logs:PutLogEvents"
-      ],
-      "Resource": "arn:aws:logs:${var.region}:*:log-group:/aws/lambda/${local.lambda_pre_sign_up_name}:*",
-      "Effect": "Allow"
-    }
-  ]
-}
-EOF
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "arn:aws:logs:${var.region}:*:log-group:/aws/lambda/${local.lambda_pre_sign_up_name}:*"
+      }
+    ]
+  })
 }
 
-resource aws_cloudwatch_log_group pre_sign_up {
+resource "aws_cloudwatch_log_group" "pre_sign_up" {
   name              = "/aws/lambda/${local.lambda_pre_sign_up_name}"
-  retention_in_days = 14
+  retention_in_days = var.expiration
   tags              = local.tags
 }
 

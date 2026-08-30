@@ -5,12 +5,20 @@ resource "aws_ecs_task_definition" "main" {
   cpu                      = var.cpu * 1024
   memory                   = var.ram
   execution_role_arn       = aws_iam_role.task.arn
-  container_definitions    = <<EOF
-  [
-    ${templatefile("task-definition/ligoj-ui.json", merge(local.tags, local.container_definition, { context_path = var.context_path }))},
-    ${templatefile("task-definition/ligoj-api.json", merge(local.tags, local.container_definition, { cpu = var.cpu * 1024, nb_cpu = var.cpu, db_tdp_arn = local.db_tdp_arn, db_user = local.db_user, db_password_arn = local.db_password_arn, db_host = local.db_host, ligoj_plugins = var.ligoj_plugins }))}
-  ]
-  EOF
+  container_definitions = jsonencode([
+    jsondecode(templatefile("${path.module}/task-definition/ligoj-ui.json", merge(local.container_definition, {
+      context_path = var.context_path
+    }))),
+    jsondecode(templatefile("${path.module}/task-definition/ligoj-api.json", merge(local.container_definition, {
+      cpu             = var.cpu * 1024
+      nb_cpu          = var.cpu
+      db_tdp_arn      = local.db_tdp_arn
+      db_user         = local.db_user
+      db_password_arn = local.db_password_arn
+      db_host         = local.db_host
+      ligoj_plugins   = var.ligoj_plugins
+    })))
+  ])
   volume {
     name = "efs"
     efs_volume_configuration {
@@ -45,23 +53,16 @@ resource "aws_iam_role_policy_attachment" "task" {
 resource "aws_iam_policy" "task_secret" {
   name        = "${local.name}-ecs-secret"
   description = "Ligoj ECS Task policy"
-  policy      = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "secretsmanager:GetSecretValue"
-      ],
-      "Resource": [
-          "${local.db_password_arn}",
-          "${local.db_tdp_arn}"
-      ]
-    }
-  ]
-}
-EOF
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = [local.db_password_arn, local.db_tdp_arn]
+      }
+    ]
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "task_secret" {

@@ -24,6 +24,7 @@ resource "random_password" "ligoj_lambda_api_token" {
   min_upper   = 1
 }
 data "external" "ligoj_lambda" {
+  count   = var.enabled ? 1 : 0
   program = ["bash", "${path.root}/ligoj_new_user.sh"]
   query = {
     rds_arn        = aws_rds_cluster.main[0].arn
@@ -52,6 +53,7 @@ resource "random_password" "ligoj_admin_api_token" {
   special = false
 }
 data "external" "ligoj_admin" {
+  count   = var.enabled ? 1 : 0
   program = ["bash", "${path.root}/ligoj_new_user.sh"]
   query = {
     rds_arn        = aws_rds_cluster.main[0].arn
@@ -72,6 +74,6 @@ data "external" "ligoj_admin" {
 locals {
   ligoj_lambda_secret_arn = aws_secretsmanager_secret.ligoj_lambda.arn
   ligoj_lambda_api_user   = "cognito_sign_up"
-  ligoj_lambda_api_token  = data.external.ligoj_lambda.result.api_token
-  ligoj_admin_api_token   = data.external.ligoj_admin.result.api_token
+  ligoj_lambda_api_token  = try(data.external.ligoj_lambda[0].result.api_token, null)
+  ligoj_admin_api_token   = try(data.external.ligoj_admin[0].result.api_token, null)
 }

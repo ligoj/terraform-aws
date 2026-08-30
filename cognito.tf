@@ -9,7 +9,7 @@ resource "aws_cognito_user_pool" "main" {
   email_configuration {
     from_email_address     = local.cognito_from
     reply_to_email_address = local.cognito_reply
-    source_arn             = var.cognito_source_arn
+    source_arn             = local.cognito_source_arn
     email_sending_account  = "DEVELOPER"
   }
   software_token_mfa_configuration {
@@ -50,7 +50,7 @@ resource "random_password" "cognito_admin" {
 }
 
 resource "aws_cognito_user_pool_domain" "main" {
-  domain          = var.cognito_dns
+  domain          = local.cognito_dns
   certificate_arn = aws_acm_certificate_validation.cognito.certificate_arn
   user_pool_id    = aws_cognito_user_pool.main.id
   depends_on      = [aws_route53_record.alb]
@@ -72,27 +72,28 @@ resource "aws_cognito_user_pool_client" "main" {
   write_attributes                     = ["name", "email"]
 }
 
+# Create the Cognito admin user when it does not exist yet
+resource "terraform_data" "admin_create_user" {
+  triggers_replace = [aws_cognito_user_pool.main.id, local.cognito_admin]
 
-resource "null_resource" "admin_create_user" {
   provisioner "local-exec" {
-    command = "aws cognito-idp admin-create-user --region ${var.region} --profile ${var.profile} --user-pool-id ${aws_cognito_user_pool.main.id} --username ${var.cognito_admin} --user-attributes Name=email,Value=${var.cognito_admin} Name=email_verified,Value=true --temporary-password \"${random_password.cognito_admin.result}\""
-  }
-
-  triggers = {
-    rerun_every_time = aws_cognito_user_pool.main.id
+    command = <<-CMD
+      aws cognito-idp admin-get-user --region ${var.region} --profile ${var.profile} --user-pool-id ${aws_cognito_user_pool.main.id} --username ${local.cognito_admin} >/dev/null 2>&1 \
+      || aws cognito-idp admin-create-user --region ${var.region} --profile ${var.profile} --user-pool-id ${aws_cognito_user_pool.main.id} --username ${local.cognito_admin} --user-attributes Name=email,Value=${local.cognito_admin} Name=email_verified,Value=true --temporary-password "${random_password.cognito_admin.result}"
+    CMD
   }
 }
 
-data "external" "coognito_user" {
-  depends_on = [null_resource.admin_create_user]
+data "external" "cognito_user" {
+  depends_on = [terraform_data.admin_create_user]
   program    = ["bash", "${path.root}/cognito_admin-get-user.sh"]
   query = {
     user_pool = aws_cognito_user_pool.main.id
     profile   = var.profile
-    username  = var.cognito_admin
+    username  = local.cognito_admin
   }
 }
 
 locals {
-  cognito_admin_sub = data.external.coognito_user.result.username
+  cognito_admin_sub = data.external.cognito_user.result.username
 }

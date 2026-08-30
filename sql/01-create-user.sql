@@ -1,1 +1,1 @@
-CREATE USER '${db_user}'@'%' IDENTIFIED BY '${db_password}'
+CREATE USER ${db_user} WITH PASSWORD '${db_password}'

@@ -1,13 +1,16 @@
 # Variables
 variable "application" {
   description = "Application name for tags and prefix resource naming"
+  type        = string
   default     = "ligoj"
 }
 variable "environment" {
   description = "The name of the service. Used to compute the resource naming"
+  type        = string
   default     = "prod"
 }
 variable "region" {
+  type    = string
   default = "eu-west-1"
 }
 variable "profile" {
@@ -16,152 +19,213 @@ variable "profile" {
 }
 
 variable "account" {
-  type = string
+  description = "AWS account id. Unused, kept for tfvars compatibility"
+  type        = string
+  default     = null
 }
 
 variable "expiration" {
-  default = 14
+  description = "CloudWatch log retention, in days"
+  type        = number
+  default     = 14
 }
 
 variable "container_protocol" {
+  type    = string
   default = "HTTP"
 }
 variable "dns" {
-  type = string
+  description = "Public DNS name of the application. When empty, computed from the application name and the DNS zone"
+  type        = string
+  default     = ""
 }
 variable "dns_zone" {
-  type = string
+  description = "Route53 public zone name hosting all the DNS records"
+  type        = string
 }
 variable "cognito_dns" {
-  type = string
+  description = "Cognito custom domain. When empty, computed from the Cognito DNS prefix and the application DNS"
+  type        = string
+  default     = ""
 }
 variable "desired_count" {
+  type    = number
   default = 1
 }
 variable "cpu" {
-  default = 2
+  description = "vCPU count of the Fargate task. Multiplied by 1024 for the task definition"
+  type        = number
+  default     = 2
 }
 variable "ram" {
-  default = 8192
+  description = "Memory of the Fargate task, in MiB"
+  type        = number
+  default     = 8192
 }
 variable "container_route_private" {
+  description = "Cognito authenticated route (path pattern), by container name"
+  type        = map(string)
   default = {
     "ligoj-ui" = "*"
   }
 }
 variable "container_route_public" {
+  description = "Unauthenticated routes (path patterns), by container name"
+  type        = map(list(string))
   default = {
     "ligoj-ui" = ["/themes/*", "/logout.html", "/favicon.ico"]
   }
 }
 variable "container_port" {
+  description = "Exposed port, by container name"
+  type        = map(number)
   default = {
     "ligoj-ui" = 8080
   }
 }
 variable "container_health" {
+  description = "Health check path, by container name"
+  type        = map(string)
   default = {
     "ligoj-ui" = "/favicon.ico"
   }
 }
 variable "container_route_query" {
+  description = "API access 'key:value' query string, by container name"
+  type        = map(string)
   default = {
     "ligoj-ui" = "api-key:*"
   }
 }
 variable "container_route_header" {
+  description = "API access 'name:value' HTTP header, by container name"
+  type        = map(string)
   default = {
     "ligoj-ui" = "x-api-key:*"
   }
 }
 
 variable "context_path" {
+  type    = string
   default = ""
 }
 variable "cidr" {
+  type    = string
   default = "10.0.0.0/16"
 }
 variable "nb_subnets" {
+  type    = number
   default = 3
 }
 variable "cidr_newbits" {
+  type    = number
   default = 8
 }
 
 variable "cognito_email_verification_subject" {
+  type    = string
   default = "[LIGOJ] Verification code"
 }
 variable "cognito_email_verification_message" {
+  type    = string
   default = "Your verification code is {####}"
 }
 variable "cognito_reply" {
+  type    = string
   default = ""
 }
 variable "cognito_source_arn" {
-  type = string
+  description = "SES identity ARN used by Cognito to send emails. When empty, computed from the region, account and Cognito admin email"
+  type        = string
+  default     = ""
 }
 variable "cognito_from" {
+  type    = string
   default = ""
 }
 variable "cognito_admin" {
+  type    = string
   default = ""
 }
 variable "cognito_dns_prefix" {
+  type    = string
   default = "login"
 }
 variable "ligoj_plugins" {
+  type    = string
   default = "plugin-id,plugin-id-cognito"
 }
 variable "ligoj_sign_up_role" {
+  type    = string
   default = "USER"
 }
 variable "ligoj_sign_up_project" {
+  type    = string
   default = "true"
 }
 variable "engine_version" {
-  # select AURORA_VERSION();
+  # SELECT AURORA_VERSION();
   # aws rds describe-db-clusters --db-cluster-identifier ligoj-prod
-  # aws rds describe-orderable-db-instance-options --engine aurora-mysql --db-instance-class db.serverless \
+  # aws rds describe-orderable-db-instance-options --engine aurora-postgresql --db-instance-class db.serverless \
   #     --region eu-west-3 --query 'OrderableDBInstanceOptions[].[EngineVersion]' --output text --profile kloudy-website
-  default = "8.0.mysql_aurora.3.02.0" # Serverless v2
-  #default = "5.7.mysql_aurora.2.07.1" # Serverless v1
-  #default = "5.7" # RDS
+  description = "Aurora PostgreSQL engine version, compatible with Serverless v2"
+  type        = string
+  default     = "17.4"
 }
 
 variable "ligoj_version" {
-  default = "3.2.3"
+  type    = string
+  default = "4.1.0"
 }
 variable "enabled" {
-  default = true
+  description = "When false, the RDS cluster and the Ligoj user bootstrap are not created"
+  type        = bool
+  default     = true
 }
 variable "db_user" {
+  type    = string
   default = "ligoj"
 }
 variable "db_master_user" {
-  default = "admin"
+  # Note: 'admin' is a reserved word rejected by RDS for PostgreSQL
+  type    = string
+  default = "postgres"
 }
 variable "storage_encrypted" {
+  type    = bool
   default = true
 }
 
 variable "cognito_email_filter" {
-  default = "(.*@kloudy.io)"
+  description = "Regular expression validating the email of a new user at sign-up"
+  type        = string
+  default     = "(.*@kloudy.io)"
 }
 
 variable "cognito_email_filter_message" {
+  type    = string
   default = "You are not allowed to use this service"
 }
 
 variable "ligoj_sign_up_subscription" {
+  description = "Subscriptions created within the welcome project of a new user"
+  type = list(object({
+    node       = string
+    mode       = string
+    parameters = optional(list(any), [])
+  }))
   default = [{ node = "service:prov:aws:sandbox", mode = "create", parameters = [] }]
 }
 
 variable "aurora_min_capacity" {
+  type    = number
   default = 0.5
 }
 variable "aurora_max_capacity" {
+  type    = number
   default = 128
 }
 variable "docker_repository" {
+  type    = string
   default = ""
 }
