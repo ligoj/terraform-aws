@@ -72,28 +72,92 @@ resource "aws_cognito_user_pool_client" "main" {
   write_attributes                     = ["name", "email"]
 }
 
-# Create the Cognito admin user when it does not exist yet
-resource "terraform_data" "admin_create_user" {
-  triggers_replace = [aws_cognito_user_pool.main.id, local.cognito_admin]
-
-  provisioner "local-exec" {
-    command = <<-CMD
-      aws cognito-idp admin-get-user --region ${var.region} --profile ${var.profile} --user-pool-id ${aws_cognito_user_pool.main.id} --username ${local.cognito_admin} >/dev/null 2>&1 \
-      || aws cognito-idp admin-create-user --region ${var.region} --profile ${var.profile} --user-pool-id ${aws_cognito_user_pool.main.id} --username ${local.cognito_admin} --user-attributes Name=email,Value=${local.cognito_admin} Name=email_verified,Value=true --temporary-password "${random_password.cognito_admin.result}"
-    CMD
+# Administrator account, invited by email with a temporary password
+resource "aws_cognito_user" "admin" {
+  user_pool_id       = aws_cognito_user_pool.main.id
+  username           = local.cognito_admin
+  temporary_password = random_password.cognito_admin.result
+  attributes = {
+    email          = local.cognito_admin
+    email_verified = true
   }
 }
 
-data "external" "cognito_user" {
-  depends_on = [terraform_data.admin_create_user]
-  program    = ["bash", "${path.root}/cognito_admin-get-user.sh"]
-  query = {
-    user_pool = aws_cognito_user_pool.main.id
-    profile   = var.profile
-    username  = local.cognito_admin
-  }
+# Hosted UI branding: Ligoj logo and color scheme (blue #4589ca, navy #034b80, orange #ff6900).
+# Cognito only accepts PNG/JPEG (max 100KB) for the logo, hence the PNG copy of the SVG logo.
+resource "aws_cognito_user_pool_ui_customization" "main" {
+  # Reference the domain to make sure it exists before the customization is applied
+  user_pool_id = aws_cognito_user_pool_domain.main.user_pool_id
+  image_file   = filebase64("${path.module}/assets/logo.png")
+  css          = <<-CSS
+    .logo-customizable {
+      max-width: 130px;
+      max-height: 130px;
+    }
+    .banner-customizable {
+      padding: 25px 0px 25px 0px;
+      background-color: #ffffff;
+    }
+    .background-customizable {
+      background-color: #f2f6fa;
+    }
+    .label-customizable {
+      font-weight: 400;
+    }
+    .textDescription-customizable {
+      padding-top: 10px;
+      padding-bottom: 10px;
+      display: block;
+      font-size: 16px;
+    }
+    .legalText-customizable {
+      color: #747474;
+      font-size: 11px;
+    }
+    .submitButton-customizable {
+      font-size: 14px;
+      font-weight: bold;
+      margin: 20px 0px 10px 0px;
+      height: 40px;
+      width: 100%;
+      color: #ffffff;
+      background-color: #ff6900;
+    }
+    .submitButton-customizable:hover {
+      color: #ffffff;
+      background-color: #e05e00;
+    }
+    .errorMessage-customizable {
+      padding: 5px;
+      font-size: 14px;
+      width: 100%;
+      background: #f5f5f5;
+      border: 2px solid #d64958;
+      color: #d64958;
+    }
+    .inputField-customizable {
+      width: 100%;
+      height: 34px;
+      color: #034b80;
+      background-color: #ffffff;
+      border: 1px solid #cccccc;
+    }
+    .inputField-customizable:focus {
+      border-color: #4589ca;
+      outline: 0;
+    }
+    .redirect-customizable {
+      text-align: center;
+    }
+    .passwordCheck-notValid-customizable {
+      color: #d64958;
+    }
+    .passwordCheck-valid-customizable {
+      color: #19bf00;
+    }
+  CSS
 }
 
 locals {
-  cognito_admin_sub = data.external.cognito_user.result.username
+  cognito_admin_sub = aws_cognito_user.admin.sub
 }

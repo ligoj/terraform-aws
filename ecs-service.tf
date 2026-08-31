@@ -6,6 +6,16 @@ resource "aws_ecs_service" "main" {
   launch_type      = "FARGATE"
   platform_version = "1.4.0"
   tags             = local.tags
+
+  # Let Ligoj boot (plugin install, schema update) before the ALB health checks count
+  health_check_grace_period_seconds = 120
+
+  # Stop and roll back a deployment whose tasks fail to stabilize, instead of retrying forever
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   network_configuration {
     security_groups  = [aws_security_group.ecs.id]
     subnets          = aws_subnet.main[*].id
@@ -24,10 +34,12 @@ resource "aws_ecs_service" "main" {
 }
 
 resource "aws_cloudwatch_log_group" "app_ui" {
-  name = "/ecs/ligoj-ui-${var.environment}"
-  tags = local.tags
+  name              = "/ecs/ligoj-ui-${var.environment}"
+  retention_in_days = var.log_retention_days
+  tags              = local.tags
 }
 resource "aws_cloudwatch_log_group" "app_api" {
-  name = "/ecs/ligoj-api-${var.environment}"
-  tags = local.tags
+  name              = "/ecs/ligoj-api-${var.environment}"
+  retention_in_days = var.log_retention_days
+  tags              = local.tags
 }

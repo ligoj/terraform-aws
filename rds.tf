@@ -12,6 +12,10 @@ resource "aws_rds_cluster_instance" "main" {
   engine             = aws_rds_cluster.main[count.index].engine
   engine_version     = aws_rds_cluster.main[count.index].engine_version
 
+  # 7 days retention is within the Performance Insights free tier
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+
   provisioner "local-exec" {
     when    = create
     command = local.rds_data_commands[0]
@@ -26,9 +30,18 @@ resource "aws_rds_cluster_instance" "main" {
   }
 }
 
+# Owns the log group RDS would otherwise auto-create with unlimited retention
+resource "aws_cloudwatch_log_group" "rds" {
+  count             = var.enabled ? 1 : 0
+  name              = "/aws/rds/cluster/${local.name}/postgresql"
+  retention_in_days = var.log_retention_days
+  tags              = local.tags
+}
+
 resource "aws_rds_cluster" "main" {
   count                           = var.enabled ? 1 : 0
   cluster_identifier              = local.name
+  depends_on                      = [aws_cloudwatch_log_group.rds]
   apply_immediately               = true
   engine                          = "aurora-postgresql"
   engine_mode                     = "provisioned"
@@ -130,7 +143,7 @@ locals {
     aws lambda invoke \
     --function-name "${local.lambda_data_api_name}" \
     --region "${var.region}" \
-    --profile "${var.profile}" \
+    ${local.aws_cli_profile} \
     --payload '${base64encode(<<-JSON
 {
   "database": null,
@@ -142,6 +155,8 @@ JSON
     "rds-${script}.log"
 CMD
 ]
+# Empty when no profile is set (e.g. CodeBuild, where the role provides credentials)
+aws_cli_profile = var.profile == null || var.profile == "" ? "" : "--profile ${var.profile}"
 db_user         = var.db_user
 db_password     = random_password.rds_app.result
 db_password_arn = aws_secretsmanager_secret_version.rds_app.secret_arn

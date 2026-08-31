@@ -229,3 +229,14 @@ variable "docker_repository" {
   type    = string
   default = ""
 }
+
+variable "log_retention_days" {
+  description = "CloudWatch retention for application and database logs, in days"
+  type        = number
+  default     = 30
+}
+variable "alarm_email" {
+  description = "Email receiving the CloudWatch alarm notifications. When empty, no subscription is created"
+  type        = string
+  default     = ""
+}

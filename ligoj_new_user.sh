@@ -43,6 +43,11 @@ function parse_input() {
   if [[ -z "${API_TOKEN_NAME}" ]]; then export API_TOKEN_NAME=none; fi
   if [[ -z "${API_TOKEN}" ]]; then export API_TOKEN=none; fi
   LOG_FILE="ligoj_new_user-${USERNAME}.log"
+  # Omit --profile when not provided (e.g. CodeBuild, where the role provides credentials)
+  PROFILE_ARG=()
+  if [ "$PROFILE" != "none" ] && [ -n "$PROFILE" ]; then
+    PROFILE_ARG=(--profile "$PROFILE")
+  fi
 }
 
 function execute_sql() {
@@ -53,7 +58,7 @@ function execute_sql() {
     local result=""
     if [ "$USE_DATA_API" == "1" ]; then
       log_info "aws rds-data execute-statement --region $REGION --database $DATABASE --resource-arn $RDS_ARN --secret-arn $RDS_SECRET_ARN --profile $PROFILE"
-      result="$(aws rds-data execute-statement --region "$REGION" --database "$DATABASE" --resource-arn "$RDS_ARN" --secret-arn "$RDS_SECRET_ARN" --profile "$PROFILE" --sql "${SQL:Q}" 2>&1)"
+      result="$(aws rds-data execute-statement --region "$REGION" --database "$DATABASE" --resource-arn "$RDS_ARN" --secret-arn "$RDS_SECRET_ARN" "${PROFILE_ARG[@]}" --sql "${SQL:Q}" 2>&1)"
     else
       local encoded_sql="$(echo "$SQL" | base64)"
       local encoded_payload="$(echo '{ 
@@ -63,7 +68,7 @@ function execute_sql() {
       }'| base64)"
       log_info "$SQL"
       rm -f "ligoj_new_user-invoke-payload.log"
-      result="$(aws lambda invoke --region $REGION --profile $PROFILE --function-name $FUNCTION_NAME --payload "$encoded_payload" "ligoj_new_user-invoke-payload.log")"
+      result="$(aws lambda invoke --region $REGION "${PROFILE_ARG[@]}" --function-name $FUNCTION_NAME --payload "$encoded_payload" "ligoj_new_user-invoke-payload.log")"
     fi
     if [ "$?" == "0" -a "$result" != "" ]; then
       if [ "$USE_DATA_API" == "1" ]; then

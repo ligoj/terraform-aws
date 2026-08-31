@@ -6,6 +6,14 @@ resource "aws_lb" "main" {
   subnets                    = aws_subnet.main[*].id
   enable_deletion_protection = false
   tags                       = local.tags
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.id
+    enabled = true
+  }
+
+  # The bucket policy must be in place before ALB starts delivering logs
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 }
 
 resource "aws_lb_listener" "http" {

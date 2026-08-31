@@ -1,6 +1,11 @@
 resource "aws_ecs_cluster" "main" {
   name = local.name
   tags = local.tags
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
 }
 
 resource "aws_security_group" "ecs" {

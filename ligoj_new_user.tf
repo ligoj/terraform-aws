@@ -31,7 +31,7 @@ data "external" "ligoj_lambda" {
     rds_secret_arn = aws_secretsmanager_secret.rds_master.arn
     rds_secret_64  = base64encode(aws_secretsmanager_secret_version.rds_master.secret_string)
     function_name  = local.lambda_data_api_name
-    profile        = var.profile
+    profile        = var.profile == null ? "" : var.profile
     region         = var.region
     username       = local.ligoj_lambda_api_user
     user_pool      = aws_cognito_user_pool.main.id
@@ -60,7 +60,7 @@ data "external" "ligoj_admin" {
     rds_secret_arn = aws_secretsmanager_secret.rds_master.arn
     rds_secret_64  = base64encode(aws_secretsmanager_secret_version.rds_master.secret_string)
     function_name  = local.lambda_data_api_name
-    profile        = var.profile
+    profile        = var.profile == null ? "" : var.profile
     region         = var.region
     username       = local.cognito_admin_sub
     user_pool      = aws_cognito_user_pool.main.id

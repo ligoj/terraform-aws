@@ -1,0 +1,21 @@
+version: 0.2
+
+env:
+  variables:
+    TF_IN_AUTOMATION: "true"
+    TF_INPUT: "false"
+
+phases:
+  install:
+    runtime-versions:
+      # npm/aws/jq are required by the local-exec provisioners of the main stack
+      nodejs: 20
+    commands:
+      - curl -sSLo /tmp/terraform.zip "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip"
+      - unzip -o -q /tmp/terraform.zip -d /usr/local/bin
+      - terraform version
+  build:
+    commands:
+      - terraform init -no-color -backend-config="bucket=${TF_STATE_BUCKET}" -backend-config="key=${TF_STATE_KEY}" -backend-config="region=${TF_STATE_REGION}"
+      # Apply exactly what the plan stage computed
+      - terraform apply -no-color tfplan
