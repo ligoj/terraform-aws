@@ -1,6 +1,7 @@
+# Internal: only reachable through the CloudFront VPC origin
 resource "aws_lb" "main" {
   name                       = local.name
-  internal                   = false
+  internal                   = true
   load_balancer_type         = "application"
   security_groups            = [aws_security_group.alb.id]
   subnets                    = aws_subnet.main[*].id
@@ -175,13 +176,13 @@ resource "aws_security_group" "alb" {
   tags        = merge(local.tags, { "Name" = "${local.name}-alb" })
 }
 
+# The CloudFront VPC origin ENIs live inside the VPC: no public ingress
 resource "aws_security_group_rule" "alb_https" {
   type              = "ingress"
   from_port         = 443
   to_port           = 443
   protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]
-  ipv6_cidr_blocks  = ["::/0"]
+  cidr_blocks       = [var.cidr]
   security_group_id = aws_security_group.alb.id
 }
 
@@ -190,8 +191,7 @@ resource "aws_security_group_rule" "alb_http" {
   from_port         = 80
   to_port           = 80
   protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]
-  ipv6_cidr_blocks  = ["::/0"]
+  cidr_blocks       = [var.cidr]
   security_group_id = aws_security_group.alb.id
 }
 

@@ -20,6 +20,25 @@ resource "aws_acm_certificate" "cognito" {
   }
 }
 
+# CloudFront viewer certificates must live in us-east-1. Same domain as the ALB
+# certificate, so the same DNS validation records apply
+resource "aws_acm_certificate" "cloudfront" {
+  region            = "us-east-1"
+  domain_name       = local.dns
+  validation_method = "DNS"
+  tags              = local.tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_acm_certificate_validation" "cloudfront" {
+  region                  = "us-east-1"
+  certificate_arn         = aws_acm_certificate.cloudfront.arn
+  validation_record_fqdns = [for record in aws_route53_record.acm_alb : record.fqdn]
+}
+
 resource "aws_acm_certificate_validation" "alb" {
   certificate_arn         = aws_acm_certificate.alb.arn
   validation_record_fqdns = [for record in aws_route53_record.acm_alb : record.fqdn]

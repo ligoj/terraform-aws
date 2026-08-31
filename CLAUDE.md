@@ -49,9 +49,16 @@ Required on the machine running Terraform, because of `local-exec` and `external
 
 ## Architecture
 
-**Request path.** Client → Route53 CNAME → ALB (443, ACM cert). The HTTPS listener defaults to a 403
-fixed response; traffic is only forwarded by listener rules, keyed by container name (`for_each` over the
-`container_*` maps) in priority bands defined in `alb.tf`:
+**Request path.** Client → Route53 alias → **CloudFront** (`cloudfront.tf`, viewer cert in us-east-1,
+`PriceClass_100`) → **VPC origin** → internal ALB (443, in-region ACM cert). CloudFront cache behaviors:
+`/rest*` and the default (authenticated app, OAuth callback) use `CachingDisabled`; `/themes/*` and
+`/favicon.ico` use `CachingOptimized`. Every behavior uses the `AllViewer` origin-request policy — the
+forwarded `Host` header is what makes the ALB host/Cognito rules match AND what lets CloudFront validate
+the origin TLS cert (the internal ALB serves the `local.dns` cert, not its `*.elb.amazonaws.com` name);
+never drop it. The ALB SG only admits the VPC CIDR (the VPC-origin ENIs live there). The CloudFront and
+ALB certs cover the same domain, so the CloudFront cert validation reuses the ALB validation records.
+The ALB HTTPS listener defaults to a 403 fixed response; traffic is only forwarded by listener rules,
+keyed by container name (`for_each` over the `container_*` maps) in priority bands defined in `alb.tf`:
 
 - 10+ `public` — path allowlist (`/themes/*`, `/logout.html`, …), no auth
 - 20+ `public_header` — API access via `x-api-key` header
@@ -115,7 +122,8 @@ order-sensitive and partial failures usually mean re-running `apply` rather than
 - **Observability** (`observability.tf`): ALB access logs to an S3 bucket expiring after
   `var.log_retention_days` (also the CloudWatch retention for ECS/RDS logs), ECS Container Insights,
   Aurora Performance Insights (7-day free tier), and CloudWatch alarms (ALB 5xx, unhealthy targets,
-  ECS CPU/memory, Aurora ACU) publishing to an SNS topic — set `var.alarm_email` to subscribe.
+  ECS CPU/memory, Aurora ACU, CloudFront 5xx rate) publishing to an SNS topic — set `var.alarm_email`
+  to subscribe.
 - The helper script writes `*.log` files into the repo root (`ligoj_new_user-<user>.log`,
   `rds-*.sql.log`). These are gitignored.
 - `.terraform.lock.hcl` is gitignored (the `**.hcl` pattern), so provider pinning is local-only; `~>`

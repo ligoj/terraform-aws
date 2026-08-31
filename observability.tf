@@ -157,3 +157,40 @@ resource "aws_cloudwatch_metric_alarm" "aurora_acu" {
   ok_actions    = [aws_sns_topic.alarms.arn]
   tags          = local.tags
 }
+
+# CloudFront metrics only exist in us-east-1, and an alarm can only notify
+# an SNS topic of its own region: mirror the topic there
+resource "aws_sns_topic" "alarms_use1" {
+  region = "us-east-1"
+  name   = "${local.name}-alarms"
+  tags   = local.tags
+}
+
+resource "aws_sns_topic_subscription" "alarms_use1_email" {
+  count     = var.alarm_email == "" ? 0 : 1
+  region    = "us-east-1"
+  topic_arn = aws_sns_topic.alarms_use1.arn
+  protocol  = "email"
+  endpoint  = var.alarm_email
+}
+
+resource "aws_cloudwatch_metric_alarm" "cloudfront_5xx" {
+  region              = "us-east-1"
+  alarm_name          = "${local.name}-cloudfront-5xx"
+  alarm_description   = "Sustained 5XX error rate at the CloudFront distribution"
+  namespace           = "AWS/CloudFront"
+  metric_name         = "5xxErrorRate"
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 5
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  dimensions = {
+    DistributionId = aws_cloudfront_distribution.main.id
+    Region         = "Global"
+  }
+  alarm_actions = [aws_sns_topic.alarms_use1.arn]
+  ok_actions    = [aws_sns_topic.alarms_use1.arn]
+  tags          = local.tags
+}

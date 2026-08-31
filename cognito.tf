@@ -53,7 +53,7 @@ resource "aws_cognito_user_pool_domain" "main" {
   domain          = local.cognito_dns
   certificate_arn = aws_acm_certificate_validation.cognito.certificate_arn
   user_pool_id    = aws_cognito_user_pool.main.id
-  depends_on      = [aws_route53_record.alb]
+  depends_on      = [aws_route53_record.app]
 }
 
 resource "aws_cognito_user_pool_client" "main" {

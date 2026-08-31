@@ -30,3 +30,6 @@ output "ligoj_admin_api_token" {
 output "ligoj_url" {
   value = local.dns
 }
+output "cloudfront_domain" {
+  value = aws_cloudfront_distribution.main.domain_name
+}
