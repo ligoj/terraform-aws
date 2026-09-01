@@ -11,7 +11,7 @@ phases:
       # npm/aws/jq are required by the local-exec provisioners of the main stack
       nodejs: 20
     commands:
-      - curl -sSLo /tmp/terraform.zip "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip"
+      - curl -sSLo /tmp/terraform.zip "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_arm64.zip"
       - unzip -o -q /tmp/terraform.zip -d /usr/local/bin
       - terraform version
   build:

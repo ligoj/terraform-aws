@@ -33,8 +33,8 @@ resource "aws_codebuild_project" "plan" {
 
   environment {
     compute_type = "BUILD_GENERAL1_SMALL"
-    image        = "aws/codebuild/amazonlinux-x86_64-standard:5.0"
-    type         = "LINUX_CONTAINER"
+    image        = "aws/codebuild/amazonlinux-aarch64-standard:4.0"
+    type         = "ARM_CONTAINER"
 
     dynamic "environment_variable" {
       for_each = local.build_env
@@ -71,8 +71,8 @@ resource "aws_codebuild_project" "apply" {
 
   environment {
     compute_type = "BUILD_GENERAL1_SMALL"
-    image        = "aws/codebuild/amazonlinux-x86_64-standard:5.0"
-    type         = "LINUX_CONTAINER"
+    image        = "aws/codebuild/amazonlinux-aarch64-standard:4.0"
+    type         = "ARM_CONTAINER"
 
     dynamic "environment_variable" {
       for_each = local.build_env

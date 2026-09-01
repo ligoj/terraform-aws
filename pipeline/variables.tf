@@ -65,3 +65,14 @@ variable "log_retention_days" {
   type    = number
   default = 30
 }
+
+variable "app_repository" {
+  description = "GitHub repository (owner/name) of the Ligoj application"
+  type        = string
+  default     = "ligoj/ligoj"
+}
+variable "app_branch" {
+  description = "Application branch whose pushes trigger an image build"
+  type        = string
+  default     = "master"
+}
