@@ -53,7 +53,7 @@ function parse_input() {
 function execute_sql() {
   set +e
   local SQL="$1"
-  local waitMax=10
+  local waitMax=45
   while true; do
     local result=""
     if [ "$USE_DATA_API" == "1" ]; then
@@ -70,7 +70,7 @@ function execute_sql() {
       rm -f "ligoj_new_user-invoke-payload.log"
       result="$(aws lambda invoke --region $REGION "${PROFILE_ARG[@]}" --function-name $FUNCTION_NAME --payload "$encoded_payload" "ligoj_new_user-invoke-payload.log")"
     fi
-    if [ "$?" == "0" -a "$result" != "" ]; then
+    if [ "$?" == "0" -a "$result" != "" ] && ! grep -q '"FunctionError"' <<<"$result"; then
       if [ "$USE_DATA_API" == "1" ]; then
         log_info "Succeed: $result"
       elif [ -f "ligoj_new_user-invoke-payload.log" ]; then
@@ -87,7 +87,7 @@ function execute_sql() {
       echo "" >> "$LOG_FILE"
       rm -f "ligoj_new_user-invoke-payload.log"
     fi
-    sleep 5
+    sleep 10
     waitMax=$(($waitMax - 1))
     if [[ "$waitMax" == "0" ]]; then
       set -e

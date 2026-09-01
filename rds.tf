@@ -6,7 +6,9 @@ resource "aws_rds_cluster_parameter_group" "main" {
 }
 
 resource "aws_rds_cluster_instance" "main" {
-  count              = var.enabled ? 1 : 0
+  count = var.enabled ? 1 : 0
+  # The create provisioners invoke the data API Lambda, referenced only by name
+  depends_on         = [aws_lambda_function.data_api]
   cluster_identifier = aws_rds_cluster.main[count.index].id
   instance_class     = "db.serverless"
   engine             = aws_rds_cluster.main[count.index].engine
