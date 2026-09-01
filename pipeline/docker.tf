@@ -37,8 +37,9 @@ resource "aws_codebuild_project" "docker" {
             - echo "Building version $${VERSION} (commit $${CODEBUILD_RESOLVED_SOURCE_VERSION})"
         build:
           commands:
-            - docker build --build-arg GIT_COMMIT="$${CODEBUILD_RESOLVED_SOURCE_VERSION}" --build-arg GIT_BRANCH="$${APP_BRANCH}" -t "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" -f app-api/Dockerfile app-api/
-            - docker build --build-arg GIT_COMMIT="$${CODEBUILD_RESOLVED_SOURCE_VERSION}" --build-arg GIT_BRANCH="$${APP_BRANCH}" -t "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${VERSION}" -f app-ui/Dockerfile app-ui/
+            # BUILDPLATFORM/TARGETPLATFORM are only auto-filled by buildx: set them explicitly
+            - docker build --build-arg BUILDPLATFORM=linux/arm64 --build-arg TARGETPLATFORM=linux/arm64 --build-arg GIT_COMMIT="$${CODEBUILD_RESOLVED_SOURCE_VERSION}" --build-arg GIT_BRANCH="$${APP_BRANCH}" -t "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" -f app-api/Dockerfile app-api/
+            - docker build --build-arg BUILDPLATFORM=linux/arm64 --build-arg TARGETPLATFORM=linux/arm64 --build-arg GIT_COMMIT="$${CODEBUILD_RESOLVED_SOURCE_VERSION}" --build-arg GIT_BRANCH="$${APP_BRANCH}" -t "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${VERSION}" -f app-ui/Dockerfile app-ui/
             - docker tag "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" "$${ECR_REGISTRY}/ligoj/ligoj-api:$${APP_BRANCH}"
             - docker tag "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${VERSION}" "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${APP_BRANCH}"
         post_build:
@@ -54,6 +55,7 @@ resource "aws_codebuild_project" "docker" {
     compute_type = "BUILD_GENERAL1_MEDIUM"
     image        = "aws/codebuild/amazonlinux-aarch64-standard:4.0"
     type         = "ARM_CONTAINER"
+    host_kernel  = "LINUX_KERNEL_6"
     # Docker daemon for the image builds
     privileged_mode = true
 

@@ -1,7 +1,9 @@
-dns_zone      = "corp.com"
-dns           = "ligoj.corp.com"
-ligoj_version = "4.1.0"
-profile       = "my-profile"
+dns_zone = "corp.com"
+dns      = "ligoj.corp.com"
+profile  = "my-profile"
+
+# Force an image tag; empty (default) deploys the latest image pushed to ECR
+#ligoj_version = "4.1.0"
 
 # For steady phase
 cpu = 2

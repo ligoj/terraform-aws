@@ -60,7 +60,7 @@
   "memoryReservation": null,
   "volumesFrom": [],
   "stopTimeout": null,
-  "image": "${repository}ligoj/ligoj-api:${ligoj_version}",
+  "image": "${image}",
   "startTimeout": null,
   "firelensConfiguration": null,
   "dependsOn": null,

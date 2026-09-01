@@ -15,11 +15,9 @@ locals {
     "MANAGED_BY" : "terraform"
   }
   container_definition = {
-    ligoj_version  = var.ligoj_version
     cognito_dns    = local.cognito_dns
     dns            = local.dns
     cognito_client = aws_cognito_user_pool_client.main.id
-    repository     = var.docker_repository
     region         = var.region
     environment    = var.environment
   }

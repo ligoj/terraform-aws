@@ -35,7 +35,7 @@ output "cloudfront_domain" {
 }
 output "ecr_registry" {
   description = "Value for 'docker_repository' to pull from the managed ECR repositories"
-  value       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/"
+  value       = local.ecr_registry
 }
 output "ses_identity_arn" {
   value = aws_sesv2_email_identity.main.arn

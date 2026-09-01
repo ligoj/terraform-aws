@@ -43,3 +43,18 @@ resource "aws_ecr_lifecycle_policy" "main" {
     ]
   })
 }
+
+# Most recently pushed image of each repository, used when no tag is forced
+data "aws_ecr_image" "latest" {
+  for_each        = var.ligoj_version == "" ? aws_ecr_repository.main : {}
+  repository_name = each.value.name
+  most_recent     = true
+}
+
+locals {
+  ecr_registry = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/"
+  # Forced tag when provided, otherwise the digest of the latest pushed ECR image
+  image = { for name in ["ligoj-ui", "ligoj-api"] :
+    name => var.ligoj_version == "" ? "${local.ecr_registry}ligoj/${name}@${data.aws_ecr_image.latest[name].image_digest}" : "${var.docker_repository}ligoj/${name}:${var.ligoj_version}"
+  }
+}

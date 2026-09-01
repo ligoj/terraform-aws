@@ -174,8 +174,14 @@ variable "engine_version" {
 }
 
 variable "ligoj_version" {
-  type    = string
-  default = "4.1.0"
+  description = "Forced image tag. Empty means the most recently pushed image of the managed ECR repositories (by digest)"
+  type        = string
+  default     = ""
+}
+variable "cpu_architecture" {
+  description = "Fargate CPU architecture, matching the pushed images"
+  type        = string
+  default     = "ARM64"
 }
 variable "enabled" {
   description = "When false, the RDS cluster and the Ligoj user bootstrap are not created"

@@ -5,11 +5,19 @@ resource "aws_ecs_task_definition" "main" {
   cpu                      = var.cpu * 1024
   memory                   = var.ram
   execution_role_arn       = aws_iam_role.task.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = var.cpu_architecture
+  }
+
   container_definitions = jsonencode([
     jsondecode(templatefile("${path.module}/task-definition/ligoj-ui.json", merge(local.container_definition, {
+      image        = local.image["ligoj-ui"]
       context_path = var.context_path
     }))),
     jsondecode(templatefile("${path.module}/task-definition/ligoj-api.json", merge(local.container_definition, {
+      image           = local.image["ligoj-api"]
       cpu             = var.cpu * 1024
       nb_cpu          = var.cpu
       db_tdp_arn      = local.db_tdp_arn
