@@ -38,6 +38,10 @@
     {
       "containerPath": "/home/ligoj",
       "sourceVolume": "efs"
+    },
+    {
+      "containerPath": "/tmp",
+      "sourceVolume": "tmp-api"
     }
   ],
   "workingDirectory": null,

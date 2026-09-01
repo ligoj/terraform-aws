@@ -120,12 +120,31 @@ function select_from() {
   local SQL="$1"
   local error="$2"
   local result="$(execute_sql "$SQL")"
-  local id="$(echo "$result" | jq -r '.records[0].id')"
-  if [ "$id" == "null" ]; then
+  local id="$(echo "$result" | jq -r '.records[0].id' 2>/dev/null)"
+  if [ -z "$id" ] || [ "$id" == "null" ]; then
     error_exit "$error: $result"
     exit 1
   fi
   echo "$id"
+}
+
+function wait_role_id() {
+  # The role rows are seeded by the Ligoj CSV import at first application boot
+  local waitMax=60
+  while true; do
+    local result="$(execute_sql "SELECT id FROM s_role WHERE name = '$ROLE_ADMIN'")"
+    local id="$(echo "$result" | jq -r '.records[0].id' 2>/dev/null)"
+    if [ -n "$id" ] && [ "$id" != "null" ]; then
+      echo "$id"
+      return 0
+    fi
+    log_info "Role $ROLE_ADMIN not present yet (application still booting?): $result"
+    sleep 10
+    waitMax=$(($waitMax - 1))
+    if [[ "$waitMax" == "0" ]]; then
+      error_exit "Role $ROLE_ADMIN never appeared, is the application running?"
+    fi
+  done
 }
 
 function create_user() {
@@ -143,9 +162,11 @@ function create_user() {
     insert "INSERT INTO s_user (login) VALUES ('$USERNAME')" "Unable to create user $USERNAME"
   fi
 
-  # Check role
+  # Check role, waiting for the application to seed it at first boot
   log_info "Check role $ROLE_ADMIN..."
-  local role_id="$(select_from "SELECT id FROM s_role WHERE name = '$ROLE_ADMIN'" "Role $ROLE_ADMIN does not exist yet")"
+  local role_id
+  role_id="$(wait_role_id)" || error_exit "Unable to resolve the $ROLE_ADMIN role"
+  [ -n "$role_id" ] || error_exit "Empty id resolved for role $ROLE_ADMIN"
 
   # Associate ADMIN role
   log_info "Check role assignment for $ROLE_ADMIN role ($role_id) and user $USERNAME ..."
@@ -155,7 +176,9 @@ function create_user() {
     log_info "Role $ROLE_ADMIN already assigned to user $USERNAME"
   else
     log_info "Get next role assignment id for $ROLE_ADMIN role ($role_id) and user $USERNAME ..."
-    local next_assignment_id="$(next_id s_role_assignment)"
+    local next_assignment_id
+    next_assignment_id="$(next_id s_role_assignment)" || error_exit "No id reserved in s_role_assignment_seq"
+    [ -n "$next_assignment_id" ] || error_exit "Empty id reserved in s_role_assignment_seq"
     log_info "Create role assignment ($next_assignment_id) for $ROLE_ADMIN role ($role_id) and user $USERNAME ..."
     insert "INSERT INTO s_role_assignment (id, role, \"user\") VALUES ($next_assignment_id, $role_id, '$USERNAME')" "Unable to associate user $USERNAME to $ROLE_ADMIN role ($role_id)"
   fi
@@ -169,7 +192,9 @@ function create_user() {
   else
     log_info "Get next API key id for user $USERNAME ..."
     # Reserve the sequence
-    local next_api_id="$(next_id s_api_token)"
+    local next_api_id
+    next_api_id="$(next_id s_api_token)" || error_exit "No id reserved in s_api_token_seq"
+    [ -n "$next_api_id" ] || error_exit "Empty id reserved in s_api_token_seq"
     # Create the token
     log_info "Create API key ($next_api_id) for user $USERNAME and named $API_TOKEN_NAME ..."
     insert "INSERT INTO s_api_token (id, name, \"user\", token, hash) VALUES ($next_api_id, '$API_TOKEN_NAME', '$USERNAME', '$API_TOKEN', '_plain_')" "Unable to create a token $API_TOKEN_NAME for user $USERNAME"

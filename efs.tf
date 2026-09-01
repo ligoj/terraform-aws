@@ -4,6 +4,27 @@ resource "aws_efs_file_system" "main" {
   tags           = local.tags
 }
 
+# The Ligoj images run as uid/gid 1001 with a read-only root filesystem: the
+# access point forces ownership so /home/ligoj is writable by the container
+resource "aws_efs_access_point" "ligoj" {
+  file_system_id = aws_efs_file_system.main.id
+  tags           = merge(local.tags, { "Name" = "${local.name}-ligoj" })
+
+  posix_user {
+    uid = 1001
+    gid = 1001
+  }
+
+  root_directory {
+    path = "/ligoj"
+    creation_info {
+      owner_uid   = 1001
+      owner_gid   = 1001
+      permissions = "750"
+    }
+  }
+}
+
 resource "aws_efs_mount_target" "main" {
   count           = var.nb_subnets
   file_system_id  = aws_efs_file_system.main.id

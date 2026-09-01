@@ -30,9 +30,22 @@ resource "aws_ecs_task_definition" "main" {
   volume {
     name = "efs"
     efs_volume_configuration {
-      file_system_id = aws_efs_file_system.main.id
-      root_directory = "/"
+      file_system_id     = aws_efs_file_system.main.id
+      root_directory     = "/"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.ligoj.id
+      }
     }
+  }
+  # Writable /tmp for each container: the root filesystem is read-only and
+  # Jetty needs a temp directory. Fargate initializes these ephemeral volumes
+  # with the image's /tmp permissions (1777)
+  volume {
+    name = "tmp-ui"
+  }
+  volume {
+    name = "tmp-api"
   }
 }
 
