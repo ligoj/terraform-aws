@@ -40,7 +40,7 @@ resource "aws_security_group_rule" "data_api_to_aurora" {
 data "archive_file" "data_api" {
   type        = "zip"
   source_dir  = "${path.module}/lambda_data_api"
-  output_path = "${path.module}/.terraform/lambda_data_api.zip"
+  output_path = "${path.module}/.build/lambda_data_api.zip"
   excludes    = ["package-lock.json", "package.json"]
   depends_on  = [terraform_data.lambda_data_api]
 }

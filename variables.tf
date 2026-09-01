@@ -11,7 +11,7 @@ variable "environment" {
 }
 variable "region" {
   type    = string
-  default = "eu-west-1"
+  default = "eu-west-3"
 }
 variable "profile" {
   type    = string
@@ -135,7 +135,7 @@ variable "cognito_reply" {
   default = ""
 }
 variable "cognito_source_arn" {
-  description = "SES identity ARN used by Cognito to send emails. When empty, computed from the region, account and Cognito admin email"
+  description = "SES identity ARN used by Cognito to send emails. When empty, the Terraform-managed identity of the DNS zone is used"
   type        = string
   default     = ""
 }
@@ -226,8 +226,9 @@ variable "aurora_max_capacity" {
   default = 128
 }
 variable "docker_repository" {
-  type    = string
-  default = ""
+  description = "Image registry prefix, with trailing slash. Empty for Docker Hub; set to the 'ecr_registry' output (after pushing the images) for the Terraform-managed ECR repositories"
+  type        = string
+  default     = ""
 }
 
 variable "log_retention_days" {

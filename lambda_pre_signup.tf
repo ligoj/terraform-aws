@@ -16,7 +16,7 @@ resource "aws_lambda_function" "pre_sign_up" {
 
 data "archive_file" "pre_sign_up" {
   type        = "zip"
-  output_path = "${path.module}/.terraform/lambda_pre_signup.zip"
+  output_path = "${path.module}/.build/lambda_pre_signup.zip"
   source {
     content  = file("${path.module}/lambda_pre_signup.js")
     filename = "index.js"

@@ -33,3 +33,5 @@ main-private.*.tfvars
 **/node_modules
 **.hcl
 README.*.md
+# Lambda build artifacts
+.build/

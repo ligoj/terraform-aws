@@ -20,6 +20,9 @@ resource "aws_cognito_user_pool" "main" {
     post_confirmation = aws_lambda_function.post_confirmation.arn
   }
   tags = local.tags
+
+  # Cognito validates the SES identity at creation
+  depends_on = [terraform_data.ses_verified]
 }
 
 resource "aws_lambda_permission" "post_confirmation" {

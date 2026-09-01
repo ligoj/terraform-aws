@@ -20,7 +20,7 @@ This architecture can be pricey due to RDS instances.
 terraform init -upgrade \
     -backend-config="bucket=ligoj-terraform-bucket" \
     -backend-config="key=ligoj.tfstate" \
-    -backend-config="region=eu-west-1" \
+    -backend-config="region=eu-west-3" \
     -backend-config="profile=ligoj"
 ```
 

@@ -20,7 +20,7 @@ resource "aws_lambda_function" "post_confirmation" {
 
 data "archive_file" "post_confirmation" {
   type        = "zip"
-  output_path = "${path.module}/.terraform/lambda_post_confirmation.zip"
+  output_path = "${path.module}/.build/lambda_post_confirmation.zip"
   source {
     content  = file("${path.module}/lambda_post_confirmation.js")
     filename = "index.js"

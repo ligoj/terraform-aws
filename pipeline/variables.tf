@@ -9,7 +9,7 @@ variable "environment" {
 }
 variable "region" {
   type    = string
-  default = "eu-west-1"
+  default = "eu-west-3"
 }
 variable "profile" {
   description = "AWS profile used to run THIS sub-project locally, never used by the pipeline itself"

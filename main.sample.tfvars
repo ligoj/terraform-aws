@@ -1,7 +1,6 @@
 dns_zone      = "corp.com"
 dns           = "ligoj.corp.com"
 ligoj_version = "4.1.0"
-account       = "123456789012"
 profile       = "my-profile"
 
 # For steady phase
@@ -13,9 +12,15 @@ ram = 8192
 #ram=8192
 #aurora_min_capacity=16
 
-cognito_dns          = "login.ligoj-rec.corp.com"
-cognito_reply        = "DO_NOT_REPLY<no-reply@corp.com>"
-cognito_source_arn   = "arn:aws:ses:eu-west-1:123456789012:identity/corp.com"
-cognito_from         = "Ligoj <ligojs@corp.com>"
-cognito_admin        = "ligojs@corp.com"
-cognito_email_filter = "(any_pattern|.*@corp.com)"
+# Emails are sent through the Terraform-managed SES identity of the DNS zone
+# (From/Reply-To and the Cognito domain 'login.<dns>' default from 'dns')
+cognito_admin                = "ligoj-admin@corp.com"
+cognito_email_filter         = "(any_pattern|.*@corp.com)"
+cognito_email_filter_message = "Only corporate staff can sign up to this application"
+
+# Empty (default) pulls from Docker Hub; set to the 'ecr_registry' output to
+# pull from the Terraform-managed ECR repositories (push the images first)
+#docker_repository = "123456789012.dkr.ecr.eu-west-3.amazonaws.com/"
+
+# Subscribe this address to the CloudWatch alarm notifications
+#alarm_email = "ligoj-admin@corp.com"

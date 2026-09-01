@@ -19,6 +19,7 @@ cannot meaningfully be least-privileged.
 ## Setup
 
 ```bash
+aws sso login --profile kloudy-website
 cd pipeline
 
 # 1. Own state, in the same bucket as the main stack but under another key

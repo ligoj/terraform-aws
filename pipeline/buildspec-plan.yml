@@ -26,5 +26,7 @@ phases:
 artifacts:
   files:
     - '**/*'
+    # Explicit: the lambda zips built during plan must reach the apply stage
+    - '.build/**/*'
   exclude-paths:
     - '.terraform/**/*'
