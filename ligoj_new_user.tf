@@ -24,8 +24,12 @@ resource "random_password" "ligoj_lambda_api_token" {
   min_upper   = 1
 }
 data "external" "ligoj_lambda" {
-  count   = var.enabled ? 1 : 0
-  program = ["bash", "${path.root}/ligoj_new_user.sh"]
+  count = var.enabled ? 1 : 0
+  # The script needs the data API Lambda (referenced only by name), the seeded
+  # database (instance provisioners) and the Ligoj schema (created at first boot
+  # of the ECS service): none of these are visible in the query below
+  depends_on = [aws_lambda_function.data_api, aws_rds_cluster_instance.main, aws_ecs_service.main]
+  program    = ["bash", "${path.root}/ligoj_new_user.sh"]
   query = {
     rds_arn        = aws_rds_cluster.main[0].arn
     rds_secret_arn = aws_secretsmanager_secret.rds_master.arn

@@ -241,3 +241,20 @@ variable "alarm_email" {
   type        = string
   default     = ""
 }
+
+variable "cloudfront_allowed_countries" {
+  description = "ISO 3166-1 alpha-2 country codes allowed to access the CloudFront distribution. Empty means no geo restriction"
+  type        = list(string)
+  default     = []
+}
+
+variable "web_acl_arn" {
+  description = "Existing WAFv2 Web ACL ARN (CLOUDFRONT scope, us-east-1) attached to the distribution. Empty means no WAF, unless an IP set is given below"
+  type        = string
+  default     = ""
+}
+variable "web_acl_allowed_ipset_arn" {
+  description = "Existing WAFv2 IP set ARN (CLOUDFRONT scope, us-east-1): when set, a Web ACL is created allowing only these IPs and attached to the distribution"
+  type        = string
+  default     = ""
+}

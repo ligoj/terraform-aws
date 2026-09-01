@@ -33,6 +33,7 @@ resource "aws_cloudfront_distribution" "main" {
   enabled         = true
   comment         = local.name
   aliases         = [local.dns]
+  web_acl_id      = local.web_acl_arn
   is_ipv6_enabled = true
   http_version    = "http2and3"
   price_class     = "PriceClass_100"
@@ -101,7 +102,8 @@ resource "aws_cloudfront_distribution" "main" {
 
   restrictions {
     geo_restriction {
-      restriction_type = "none"
+      restriction_type = length(var.cloudfront_allowed_countries) == 0 ? "none" : "whitelist"
+      locations        = var.cloudfront_allowed_countries
     }
   }
 }

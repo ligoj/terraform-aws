@@ -22,5 +22,8 @@ cognito_email_filter_message = "Only corporate staff can sign up to this applica
 # pull from the Terraform-managed ECR repositories (push the images first)
 #docker_repository = "123456789012.dkr.ecr.eu-west-3.amazonaws.com/"
 
+# Restrict CloudFront to these countries (ISO 3166-1 alpha-2); empty = worldwide
+#cloudfront_allowed_countries = ["FR"]
+
 # Subscribe this address to the CloudWatch alarm notifications
 #alarm_email = "ligoj-admin@corp.com"
