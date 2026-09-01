@@ -76,18 +76,25 @@ resource "aws_codepipeline" "main" {
     }
   }
 
-  stage {
-    name = "Plan"
-    action {
-      name             = "Plan"
-      category         = "Build"
-      owner            = "AWS"
-      provider         = "CodeBuild"
-      version          = "1"
-      input_artifacts  = ["source"]
-      output_artifacts = ["plan"]
-      configuration = {
-        ProjectName = aws_codebuild_project.plan.name
+  # A separate plan stage cannot bootstrap this stack: the external data sources
+  # need the application running, which only the apply can achieve (the single
+  # process defers them until after the ECS service converges). The plan/approval
+  # stages are therefore opt-in, for steady-state reviews only.
+  dynamic "stage" {
+    for_each = var.require_approval ? [1] : []
+    content {
+      name = "Plan"
+      action {
+        name             = "Plan"
+        category         = "Build"
+        owner            = "AWS"
+        provider         = "CodeBuild"
+        version          = "1"
+        input_artifacts  = ["source"]
+        output_artifacts = ["plan"]
+        configuration = {
+          ProjectName = aws_codebuild_project.plan.name
+        }
       }
     }
   }
@@ -114,7 +121,7 @@ resource "aws_codepipeline" "main" {
       owner           = "AWS"
       provider        = "CodeBuild"
       version         = "1"
-      input_artifacts = ["plan"]
+      input_artifacts = [var.require_approval ? "plan" : "source"]
       configuration = {
         ProjectName = aws_codebuild_project.apply.name
       }

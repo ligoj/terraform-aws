@@ -58,7 +58,7 @@ resource "aws_codebuild_project" "apply" {
   name          = "${local.name}-apply"
   description   = "terraform apply of ${var.repository}"
   service_role  = aws_iam_role.build.arn
-  build_timeout = 60
+  build_timeout = 90
   tags          = local.tags
 
   artifacts {

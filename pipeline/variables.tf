@@ -56,7 +56,7 @@ variable "terraform_version" {
 }
 
 variable "require_approval" {
-  description = "When true, a manual approval stage is inserted between plan and apply"
+  description = "When true, plan and manual approval stages precede the apply. Only works on an already bootstrapped stack (the plan executes the external data sources, which need the application running)"
   type        = bool
   default     = false
 }

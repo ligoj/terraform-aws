@@ -17,5 +17,9 @@ phases:
   build:
     commands:
       - terraform init -no-color -backend-config="bucket=${TF_STATE_BUCKET}" -backend-config="key=${TF_STATE_KEY}" -backend-config="region=${TF_STATE_REGION}"
-      # Apply exactly what the plan stage computed
-      - terraform apply -no-color tfplan
+      # Deployment values live outside the repository ('profile' must NOT be set in them)
+      - if [ -n "${TFVARS_S3_URI}" ] && [ ! -f pipeline.auto.tfvars ]; then aws s3 cp "${TFVARS_S3_URI}" pipeline.auto.tfvars; fi
+      # Approval mode hands a plan file over; the default pipeline applies directly.
+      # A standalone plan cannot bootstrap the stack: its external data sources need
+      # the application running, which only the apply can achieve
+      - if [ -f tfplan ]; then terraform apply -no-color tfplan; else terraform apply -no-color -auto-approve; fi

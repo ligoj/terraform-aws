@@ -4,17 +4,17 @@ A standalone Terraform sub-project provisioning a CodePipeline (V2) that deploys
 Terraform stack** (repository root) whenever the `main` branch changes:
 
 ```
-GitHub push (main) ──> Source ──> Plan (CodeBuild: terraform plan)
-                                      │ tfplan artifact
-                                      ▼
-                       [Approve]* ──> Apply (CodeBuild: terraform apply tfplan)
+GitHub push (main) ──> Source ──> Apply (CodeBuild: terraform apply -auto-approve)
 ```
 
-\* Optional manual approval stage, enabled with `-var require_approval=true`.
+With `-var require_approval=true`, plan and manual approval stages precede the apply
+(`terraform plan -out=tfplan`, then `terraform apply tfplan`). **Approval mode only works on an
+already bootstrapped stack**: the plan executes the external data sources of the bootstrap chain,
+which need the Ligoj application running — a from-scratch deployment must use the default direct
+apply, where Terraform defers those reads until after the ECS service converges.
 
-The apply stage applies the exact `tfplan` binary produced by the plan stage. The CodeBuild
-role holds `AdministratorAccess`: a full-stack Terraform deployer (VPC, IAM, RDS, Cognito, …)
-cannot meaningfully be least-privileged.
+The CodeBuild role holds `AdministratorAccess`: a full-stack Terraform deployer (VPC, IAM, RDS,
+Cognito, …) cannot meaningfully be least-privileged.
 
 ## Setup
 
@@ -61,7 +61,7 @@ Until then, the Source stage fails with a connection error.
 | `state_region`       | `region`             | Region of the state bucket                         |
 | `tfvars_s3_uri`      | *(empty)*            | `s3://…` tfvars applied by the pipeline            |
 | `terraform_version`  | `1.16.0`             | Terraform CLI version used in CodeBuild            |
-| `require_approval`   | `false`              | Insert a manual approval between plan and apply    |
+| `require_approval`   | `false`              | Plan + manual approval before apply (bootstrapped stacks only) |
 | `profile`            | `null`               | AWS profile to run THIS sub-project locally        |
 
 ## Notes
