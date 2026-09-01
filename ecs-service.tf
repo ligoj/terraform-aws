@@ -16,6 +16,10 @@ resource "aws_ecs_service" "main" {
     rollback = true
   }
 
+  # The apply only proceeds (bootstrap resources, outputs) once the deployment
+  # is actually rolled out: a failed rollout fails the apply with a clear error
+  wait_for_steady_state = true
+
   network_configuration {
     security_groups  = [aws_security_group.ecs.id]
     subnets          = aws_subnet.main[*].id
