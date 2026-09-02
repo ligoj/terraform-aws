@@ -57,20 +57,34 @@ resource "aws_lb_target_group" "main" {
   target_type = "ip"
 
   health_check {
-    path     = lookup(var.container_health, each.key, "/index.html")
+    path     = lookup(var.container_health, each.key, "/")
     protocol = var.container_protocol
+    # The root of the authenticated app may answer with a redirect
+    matcher = "200-399"
   }
 }
 
-# Priority 10+: unauthenticated paths (themes, logout page, favicon)
+# Priority 10+: unauthenticated paths (static assets, logout page, favicon).
+# An ALB rule accepts at most 5 condition values (1 host header + 4 paths):
+# the path list is chunked into as many rules as needed
+locals {
+  public_route_chunks = merge([for name, paths in var.container_route_public : {
+    for i, chunk in chunklist(paths, 4) : "${name}-${i}" => {
+      container = name
+      paths     = chunk
+      priority  = 10 + index(keys(var.container_route_public), name) * 4 + i
+    }
+  }]...)
+}
+
 resource "aws_lb_listener_rule" "public" {
-  for_each     = var.container_route_public
+  for_each     = local.public_route_chunks
   listener_arn = aws_lb_listener.https.arn
-  priority     = 10 + index(keys(var.container_route_public), each.key)
+  priority     = each.value.priority
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.main[each.key].arn
+    target_group_arn = aws_lb_target_group.main[each.value.container].arn
   }
   condition {
     host_header {
@@ -79,7 +93,7 @@ resource "aws_lb_listener_rule" "public" {
   }
   condition {
     path_pattern {
-      values = each.value
+      values = each.value.paths
     }
   }
 }
@@ -176,23 +190,34 @@ resource "aws_security_group" "alb" {
   tags        = merge(local.tags, { "Name" = "${local.name}-alb" })
 }
 
-# The CloudFront VPC origin ENIs live inside the VPC: no public ingress
+# VPC origin traffic does NOT arrive from the ENI's in-VPC address: per AWS
+# docs the origin must admit either the CloudFront managed prefix list or the
+# service-managed security group the VPC origin creates. The latter is the most
+# restrictive option
+data "aws_security_group" "cloudfront_vpc_origins" {
+  name   = "CloudFront-VPCOrigins-Service-SG"
+  vpc_id = aws_vpc.main.id
+
+  # The service SG only exists once the VPC origin is deployed
+  depends_on = [aws_cloudfront_vpc_origin.alb]
+}
+
 resource "aws_security_group_rule" "alb_https" {
-  type              = "ingress"
-  from_port         = 443
-  to_port           = 443
-  protocol          = "tcp"
-  cidr_blocks       = [var.cidr]
-  security_group_id = aws_security_group.alb.id
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = data.aws_security_group.cloudfront_vpc_origins.id
+  security_group_id        = aws_security_group.alb.id
 }
 
 resource "aws_security_group_rule" "alb_http" {
-  type              = "ingress"
-  from_port         = 80
-  to_port           = 80
-  protocol          = "tcp"
-  cidr_blocks       = [var.cidr]
-  security_group_id = aws_security_group.alb.id
+  type                     = "ingress"
+  from_port                = 80
+  to_port                  = 80
+  protocol                 = "tcp"
+  source_security_group_id = data.aws_security_group.cloudfront_vpc_origins.id
+  security_group_id        = aws_security_group.alb.id
 }
 
 resource "aws_security_group_rule" "alb_egress" {

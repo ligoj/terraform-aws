@@ -80,6 +80,11 @@ resource "aws_cognito_user" "admin" {
   user_pool_id       = aws_cognito_user_pool.main.id
   username           = local.cognito_admin
   temporary_password = random_password.cognito_admin.result
+  # The invitation defaults to SMS: without this, no email is ever sent.
+  # NOTE: delivery only happens while SES is out of the sandbox (or to
+  # SES-verified addresses); the temporary password otherwise lives in the
+  # Terraform state (random_password.cognito_admin)
+  desired_delivery_mediums = ["EMAIL"]
   attributes = {
     email          = local.cognito_admin
     email_verified = true

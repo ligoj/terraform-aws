@@ -14,6 +14,51 @@ resource "aws_wafv2_web_acl" "ip_allowlist" {
     block {}
   }
 
+  # Optional bypass: a request carrying the secret cookie is allowed regardless
+  # of its source IP (useful when roaming outside the allowlisted networks)
+  dynamic "rule" {
+    for_each = var.web_acl_secret_cookie == "" ? [] : [1]
+    content {
+      name     = "allow-secret-cookie"
+      priority = 0
+
+      action {
+        allow {}
+      }
+
+      statement {
+        byte_match_statement {
+          search_string         = var.web_acl_secret_cookie
+          positional_constraint = "EXACTLY"
+
+          # Browsers split the Cookie header into one field per cookie over
+          # HTTP/2, and single_header only inspects the first: the parsed
+          # 'cookies' match is the only reliable way. The cookie NAME is fixed.
+          field_to_match {
+            cookies {
+              match_scope       = "VALUE"
+              oversize_handling = "NO_MATCH"
+              match_pattern {
+                included_cookies = ["waf_bypass"]
+              }
+            }
+          }
+
+          text_transformation {
+            priority = 0
+            type     = "NONE"
+          }
+        }
+      }
+
+      visibility_config {
+        cloudwatch_metrics_enabled = true
+        metric_name                = "${local.name}-allow-secret-cookie"
+        sampled_requests_enabled   = true
+      }
+    }
+  }
+
   rule {
     name     = "allow-listed-ips"
     priority = 1

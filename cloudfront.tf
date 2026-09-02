@@ -61,6 +61,19 @@ resource "aws_cloudfront_distribution" "main" {
   }
 
   # Static assets: cached on the URL only
+  dynamic "ordered_cache_behavior" {
+    for_each = toset(["/lib/*", "/dist/*", "/assets/*"])
+    content {
+      path_pattern             = "${var.context_path}${ordered_cache_behavior.value}"
+      target_origin_id         = "alb"
+      allowed_methods          = ["GET", "HEAD"]
+      cached_methods           = ["GET", "HEAD"]
+      cache_policy_id          = data.aws_cloudfront_cache_policy.assets.id
+      origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
+      viewer_protocol_policy   = "redirect-to-https"
+      compress                 = true
+    }
+  }
   ordered_cache_behavior {
     path_pattern             = "${var.context_path}/themes/*"
     target_origin_id         = "alb"

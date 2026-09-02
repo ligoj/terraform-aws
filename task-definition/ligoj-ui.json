@@ -24,7 +24,7 @@
   "environment": [
     {
       "name": "CUSTOM_OPTS",
-      "value": "-Dsecurity.pre-auth-logout=https://${cognito_dns}${context_path}/logout?client_id=${cognito_client}&logout_uri=https://${dns}${context_path}/ -Dsecurity.pre-auth-cookies=AWSELBAuthSessionCookie-0,AWSELBAuthSessionCookie-1,AWSALB -Dsecurity.pre-auth-credentials=X-Amzn-Oidc-Accesstoken -Dsecurity.pre-auth-principal=X-Amzn-Oidc-Identity"
+      "value": "-Dserver.servlet.register-default-servlet=true -Dsecurity.pre-auth-logout=https://${cognito_dns}${context_path}/logout?client_id=${cognito_client}&logout_uri=https://${dns}${context_path}/ -Dsecurity.pre-auth-cookies=AWSELBAuthSessionCookie-0,AWSELBAuthSessionCookie-1,AWSALB -Dsecurity.pre-auth-credentials=X-Amzn-Oidc-Accesstoken -Dsecurity.pre-auth-principal=X-Amzn-Oidc-Identity"
     },{
       "name": "CONTEXT_URL",
       "value": "${context_path}"

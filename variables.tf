@@ -70,10 +70,10 @@ variable "container_route_private" {
   }
 }
 variable "container_route_public" {
-  description = "Unauthenticated routes (path patterns), by container name"
+  description = "Unauthenticated routes (path patterns), by container name. Matches the Ligoj 5.x pre-auth whitelist"
   type        = map(list(string))
   default = {
-    "ligoj-ui" = ["/themes/*", "/logout.html", "/favicon.ico"]
+    "ligoj-ui" = ["/themes/*", "/lib/*", "/dist/*", "/assets/*", "/main/public/*", "/logout.html", "/favicon.ico"]
   }
 }
 variable "container_port" {
@@ -87,6 +87,7 @@ variable "container_health" {
   description = "Health check path, by container name"
   type        = map(string)
   default = {
+    # A pre-auth whitelisted static: '/' itself answers 401 to anonymous checks
     "ligoj-ui" = "/favicon.ico"
   }
 }
@@ -262,5 +263,12 @@ variable "web_acl_arn" {
 variable "web_acl_allowed_ipset_arn" {
   description = "Existing WAFv2 IP set ARN (CLOUDFRONT scope, us-east-1): when set, a Web ACL is created allowing only these IPs and attached to the distribution"
   type        = string
+  default     = ""
+}
+
+variable "web_acl_secret_cookie" {
+  description = "Secret value: any request whose Cookie header contains it bypasses the IP allowlist of the generated Web ACL. Empty disables the bypass"
+  type        = string
+  sensitive   = true
   default     = ""
 }
