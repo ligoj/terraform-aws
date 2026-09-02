@@ -36,12 +36,7 @@
   "resourceRequirements": null,
   "ulimits": null,
   "dnsServers": null,
-  "mountPoints": [
-    {
-      "containerPath": "/tmp",
-      "sourceVolume": "tmp-ui"
-    }
-  ],
+  "mountPoints": [],
   "workingDirectory": null,
   "secrets": null,
   "dockerSecurityOptions": null,

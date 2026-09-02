@@ -38,10 +38,6 @@
     {
       "containerPath": "/home/ligoj",
       "sourceVolume": "efs"
-    },
-    {
-      "containerPath": "/tmp",
-      "sourceVolume": "tmp-api"
     }
   ],
   "workingDirectory": null,
@@ -86,7 +82,7 @@
   "extraHosts": null,
   "pseudoTerminal": null,
   "user": null,
-  "readonlyRootFilesystem": true,
+  "readonlyRootFilesystem": false,
   "dockerLabels": null,
   "systemControls": null,
   "privileged": null,

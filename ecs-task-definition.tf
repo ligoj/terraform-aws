@@ -38,15 +38,6 @@ resource "aws_ecs_task_definition" "main" {
       }
     }
   }
-  # Writable /tmp for each container: the root filesystem is read-only and
-  # Jetty needs a temp directory. Fargate initializes these ephemeral volumes
-  # with the image's /tmp permissions (1777)
-  volume {
-    name = "tmp-ui"
-  }
-  volume {
-    name = "tmp-api"
-  }
 }
 
 resource "aws_iam_role" "task" {
