@@ -29,3 +29,8 @@ cognito_email_filter_message = "Only corporate staff can sign up to this applica
 
 # Subscribe this address to the CloudWatch alarm notifications
 #alarm_email = "ligoj-admin@corp.com"
+
+# Optional off-hours shutdown of the Fargate tasks (Application Auto Scaling cron, 6 fields)
+#ecs_stop_schedule     = "cron(0 20 ? * MON-FRI *)"
+#ecs_start_schedule    = "cron(0 7 ? * MON-FRI *)"
+#ecs_schedule_timezone = "Europe/Paris"

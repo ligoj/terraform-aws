@@ -111,6 +111,7 @@ resource "aws_cloudwatch_metric_alarm" "ecs_cpu" {
   evaluation_periods  = 3
   threshold           = 85
   comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
   dimensions = {
     ClusterName = aws_ecs_cluster.main.name
     ServiceName = aws_ecs_service.main.name
@@ -130,6 +131,7 @@ resource "aws_cloudwatch_metric_alarm" "ecs_memory" {
   evaluation_periods  = 3
   threshold           = 90
   comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
   dimensions = {
     ClusterName = aws_ecs_cluster.main.name
     ServiceName = aws_ecs_service.main.name

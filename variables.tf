@@ -272,3 +272,19 @@ variable "web_acl_secret_cookie" {
   sensitive   = true
   default     = ""
 }
+
+variable "ecs_stop_schedule" {
+  description = "Optional Application Auto Scaling cron stopping the ECS tasks (scale to 0), e.g. 'cron(0 20 ? * MON-FRI *)'. Empty = never"
+  type        = string
+  default     = ""
+}
+variable "ecs_start_schedule" {
+  description = "Optional Application Auto Scaling cron starting the ECS tasks (scale to desired_count), e.g. 'cron(0 7 ? * MON-FRI *)'. Empty = never"
+  type        = string
+  default     = ""
+}
+variable "ecs_schedule_timezone" {
+  description = "IANA time zone of the ECS start/stop schedules"
+  type        = string
+  default     = "UTC"
+}
