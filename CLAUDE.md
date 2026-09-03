@@ -55,8 +55,12 @@ Required on the machine running Terraform, because of `local-exec` and `external
 `/favicon.ico` use `CachingOptimized`. Every behavior uses the `AllViewer` origin-request policy — the
 forwarded `Host` header is what makes the ALB host/Cognito rules match AND what lets CloudFront validate
 the origin TLS cert (the internal ALB serves the `local.dns` cert, not its `*.elb.amazonaws.com` name);
-never drop it. The ALB SG only admits the VPC CIDR (the VPC-origin ENIs live there). The CloudFront and
+never drop it. The ALB SG only admits the `CloudFront-VPCOrigins-Service-SG` (VPC-origin traffic does NOT source
+from the ENI's in-VPC IP — a VPC-CIDR rule silently drops it). The CloudFront and
 ALB certs cover the same domain, so the CloudFront cert validation reuses the ALB validation records.
+Optional edge controls: `cloudfront_allowed_countries` (geo allowlist) and `web_acl_arn` /
+`web_acl_allowed_ipset_arn` (`waf.tf` — the latter generates an IP-allowlist Web ACL around an
+existing us-east-1 CLOUDFRONT-scope IP set; CloudFront only accepts Web ACL ARNs, never IP set ARNs).
 The ALB HTTPS listener defaults to a 403 fixed response; traffic is only forwarded by listener rules,
 keyed by container name (`for_each` over the `container_*` maps) in priority bands defined in `alb.tf`:
 
@@ -72,7 +76,11 @@ login is the Cognito `sub` (UUID), not the email.**
 **One task, two containers.** `ecs-task-definition.tf` renders both `task-definition/*.json` templates
 (`jsonencode(jsondecode(templatefile(...)))`) into a single Fargate task. Only `ligoj-ui` is exposed (8080,
 ALB target group); it calls `ligoj-api` over `http://localhost:8081/ligoj-api`. `ligoj-api` mounts EFS at
-`/home/ligoj` and pulls DB/crypto secrets from Secrets Manager. Ligoj 4.x defaults to PostgreSQL
+`/home/ligoj` **through an access point forcing uid/gid 1001** (the non-root user of the 4.x/5.x
+images) and pulls DB/crypto secrets from Secrets Manager. Both containers need a **writable root
+filesystem** (Jetty temp dirs in `/tmp`, the UI's startup `sed` of the SPA context placeholder) —
+do not set `readonlyRootFilesystem`, and never mount a Fargate ephemeral volume over `/tmp`
+(Fargate mounts them root-owned 0755, unwritable for uid 1001). Ligoj 4.x defaults to PostgreSQL
 (`jdbc.vendor=postgresql`, port 5432, bundled `org.postgresql` driver), so the task definition only
 overrides `jdbc.host` / `jdbc.username` (plus `JDBC_PASSWORD` via Spring relaxed env binding). The
 `container_*` variables are maps keyed by container name — only `ligoj-ui` has entries.
@@ -90,17 +98,23 @@ done by proxy through a Lambda, in this order:
    `sql/` (create database → create user → make the user own the database).
 3. `aws_cognito_user.admin` creates the admin account (invitation email + temporary password); its `sub`
    attribute feeds the next step.
-4. `ligoj_new_user.sh` (`external`, run twice — for the `cognito_sign_up` service account and for the admin
-   `sub`, both gated on `var.enabled`) INSERTs into `s_user` / `s_role_assignment` / `s_api_token` via the
-   same Lambda, drawing ids from the native `<table>_seq` PostgreSQL sequences Hibernate creates
-   (`nextval()`). The `user` column is a PG reserved word and stays double-quoted in SQL. Tokens are stored
-   with a literal `_plain_` hash marker.
+4. `ligoj_new_user.sh` (run twice, via `terraform_data` **resources** — NEVER convert these back to
+   data sources: they must execute at apply time only, after `aws_ecs_service.main` reaches steady
+   state (`wait_for_steady_state`), because Ligoj creates the schema and seeds `s_role` at first boot)
+   INSERTs into `s_user` / `s_role_assignment` / `s_api_token` via the same Lambda, drawing ids from the
+   native `<table>_seq` PostgreSQL sequences (`nextval()`). The `user` column is a PG reserved word and
+   stays double-quoted. Tokens are stored with a literal `_plain_` hash marker — the stored value IS
+   `_plain_` + the `random_password`, so Terraform never needs to read anything back.
 5. `lambda_pre_signup` (regex email allowlist) and `lambda_post_confirmation` (calls the Ligoj REST API with
    the `cognito_sign_up` API token to create the user, grant a role, and optionally create a welcome project +
    subscription; uses native `fetch`) are attached to the Cognito user pool. All Lambdas run `nodejs22.x`.
 
-Because steps 3–5 depend on the DB being seeded and the app being reachable, a from-scratch `apply` is
-order-sensitive and partial failures usually mean re-running `apply` rather than tainting.
+Steps 2 and 4 are ordered by explicit `depends_on` (the Lambda is referenced only by NAME — Terraform
+sees no implicit dependency; keep the `depends_on` when refactoring). `ligoj_new_user.sh` retries up to
+~7 minutes per statement and waits up to 10 minutes for the `ADMIN` role to be seeded. A from-scratch
+deployment MUST go through `apply` (the pipeline default): a standalone `plan` of a bootstrapped-but-
+unhealthy stack has nothing to defer and nothing to fix. A partial failure usually means re-running
+`apply` rather than tainting.
 
 ## Conventions and gotchas
 
@@ -115,10 +129,33 @@ order-sensitive and partial failures usually mean re-running `apply` rather than
 - `var.cpu` is a vCPU **count** (multiplied by 1024 for Fargate and passed as `-XX:ActiveProcessorCount`);
   `var.ram` is MiB. tfvars files carry commented "import phase" values (higher cpu/ram, `aurora_min_capacity=16`)
   used for bulk imports, then reverted.
-- The Cognito hosted login page is branded by `aws_cognito_user_pool_ui_customization` with
-  `assets/logo.png` (Cognito accepts only PNG/JPEG <= 100KB, not the SVG) and the Ligoj palette
-  (blue `#4589ca`, navy `#034b80`, orange `#ff6900`) — the palette source of truth is
-  `ligoj/app-ui/.../assets/logo.svg`.
+- **ECR** (`ecr.tf`): managed repositories `ligoj/ligoj-ui|api` (scan-on-push, lifecycle expiry), fed by
+  the `pipeline/docker.tf` image pipeline (ligoj/ligoj@master, native arm64 build, inline buildspec).
+  Image selection: empty `var.ligoj_version` (default) deploys the **digest of the most recently pushed
+  ECR image** (`data.aws_ecr_image` `most_recent`); a non-empty value forces `docker_repository` + tag.
+  Fresh accounts must run the docker pipeline once before the first main apply (empty repo fails the
+  data source). Fargate tasks run on **ARM64** (`var.cpu_architecture`) — images must match.
+  The docker buildspec activates `app-api/prepare-build.sh` (copied from the `-sample`) so the
+  image bundles `plugin-vendors-default.p12` built from `app-api/plugin-vendors/*.cer`; that is what
+  makes signed plugins show as VERIFIED (defaults: `${ligoj.home}/plugin-vendors.p12`, `changeit`).
+  The container installs it into `LIGOJ_HOME` (EFS) **only when absent** — after a vendor cert
+  rotation, delete `/home/ligoj/plugin-vendors.p12` on EFS so the next boot reinstalls it.
+- **SES** (`ses.tf`): SESv2 domain identity on `var.dns_zone` (Easy DKIM + custom MAIL FROM records in
+  Route53), used as the default `cognito_source_arn`. A `terraform_data` waits for DKIM verification
+  because Cognito validates the identity at pool creation. Fresh AWS accounts are in the SES sandbox
+  (delivery only to verified addresses) — production access is a manual SES console request. tfvars
+  overriding `cognito_source_arn` (external identities, e.g. kloudy.io) bypass all of this.
+- The Cognito login page uses **Managed Login v2** (`managed_login_version = 2` on the domain) branded by
+  `aws_cognito_managed_login_branding`: `assets/managed-login.json` is the FULL settings document (exported
+  from Cognito's defaults, palette blue `#4589ca` / navy `#034b80` / orange `#ff6900` applied, colors as
+  RRGGBBAA) and `assets/logo.svg` is both the form logo and the SVG favicon (v2 accepts SVG, the classic
+  UI did not). To add a setting, export the defaults again (`create-managed-login-branding
+  --use-cognito-provided-values` + `describe-managed-login-branding --return-merged-resources`, then
+  delete) rather than guessing keys. The palette source of truth is `ligoj/app-ui/.../assets/logo.svg`.
+- **Off-hours schedules** (`ecs-schedule.tf`): `ecs_stop_schedule` / `ecs_start_schedule` (Application Auto
+  Scaling 6-field crons, `ecs_schedule_timezone`) scale the ECS service to 0 and back to `desired_count`
+  through a scalable target — no Lambda. An apply during the stopped window restarts the tasks until the
+  next stop; the ECS alarms use `notBreaching` on missing data so a stopped service does not flap them.
 - **Observability** (`observability.tf`): ALB access logs to an S3 bucket expiring after
   `var.log_retention_days` (also the CloudWatch retention for ECS/RDS logs), ECS Container Insights,
   Aurora Performance Insights (7-day free tier), and CloudWatch alarms (ALB 5xx, unhealthy targets,
@@ -128,3 +165,7 @@ order-sensitive and partial failures usually mean re-running `apply` rather than
   `rds-*.sql.log`). These are gitignored.
 - `.terraform.lock.hcl` is gitignored (the `**.hcl` pattern), so provider pinning is local-only; `~>`
   constraints in `provider.tf` are the real bound.
+- Lambda zips are built into `.build/` (gitignored), NOT `.terraform/`: the pipeline's plan artifact
+  excludes `.terraform/` but must carry the zips to the apply stage. Keep archive `output_path`s there.
+- Both backends use S3 native locking (`use_lockfile = true`, hence Terraform >= 1.10). Never run a
+  local apply/destroy while the pipeline may run — and vice versa; the lock now enforces this.
