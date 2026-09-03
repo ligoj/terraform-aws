@@ -1,10 +1,11 @@
 # Internal: only reachable through the CloudFront VPC origin
 resource "aws_lb" "main" {
-  name                       = local.name
-  internal                   = true
-  load_balancer_type         = "application"
-  security_groups            = [aws_security_group.alb.id]
-  subnets                    = aws_subnet.main[*].id
+  name               = local.name
+  internal           = true
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  # Private subnets: the authenticate-cognito token exchange needs NAT egress
+  subnets                    = aws_subnet.private[*].id
   enable_deletion_protection = false
   tags                       = local.tags
 
