@@ -56,7 +56,9 @@ resource "aws_cognito_user_pool_domain" "main" {
   domain          = local.cognito_dns
   certificate_arn = aws_acm_certificate_validation.cognito.certificate_arn
   user_pool_id    = aws_cognito_user_pool.main.id
-  depends_on      = [aws_route53_record.app]
+  # 2 = Managed Login (branding designer); 1 = classic hosted UI
+  managed_login_version = 2
+  depends_on            = [aws_route53_record.app]
 }
 
 resource "aws_cognito_user_pool_client" "main" {
@@ -91,79 +93,30 @@ resource "aws_cognito_user" "admin" {
   }
 }
 
-# Hosted UI branding: Ligoj logo and color scheme (blue #4589ca, navy #034b80, orange #ff6900).
-# Cognito only accepts PNG/JPEG (max 100KB) for the logo, hence the PNG copy of the SVG logo.
-resource "aws_cognito_user_pool_ui_customization" "main" {
-  # Reference the domain to make sure it exists before the customization is applied
-  user_pool_id = aws_cognito_user_pool_domain.main.user_pool_id
-  image_file   = filebase64("${path.module}/assets/logo.png")
-  css          = <<-CSS
-    .logo-customizable {
-      max-width: 130px;
-      max-height: 130px;
-    }
-    .banner-customizable {
-      padding: 25px 0px 25px 0px;
-      background-color: #ffffff;
-    }
-    .background-customizable {
-      background-color: #f2f6fa;
-    }
-    .label-customizable {
-      font-weight: 400;
-    }
-    .textDescription-customizable {
-      padding-top: 10px;
-      padding-bottom: 10px;
-      display: block;
-      font-size: 16px;
-    }
-    .legalText-customizable {
-      color: #747474;
-      font-size: 11px;
-    }
-    .submitButton-customizable {
-      font-size: 14px;
-      font-weight: bold;
-      margin: 20px 0px 10px 0px;
-      height: 40px;
-      width: 100%;
-      color: #ffffff;
-      background-color: #ff6900;
-    }
-    .submitButton-customizable:hover {
-      color: #ffffff;
-      background-color: #e05e00;
-    }
-    .errorMessage-customizable {
-      padding: 5px;
-      font-size: 14px;
-      width: 100%;
-      background: #f5f5f5;
-      border: 2px solid #d64958;
-      color: #d64958;
-    }
-    .inputField-customizable {
-      width: 100%;
-      height: 34px;
-      color: #034b80;
-      background-color: #ffffff;
-      border: 1px solid #cccccc;
-    }
-    .inputField-customizable:focus {
-      border-color: #4589ca;
-      outline: 0;
-    }
-    .redirect-customizable {
-      text-align: center;
-    }
-    .passwordCheck-notValid-customizable {
-      color: #d64958;
-    }
-    .passwordCheck-valid-customizable {
-      color: #19bf00;
-    }
-  CSS
+# Managed Login branding: Ligoj palette (blue #4589ca, navy #034b80, orange #ff6900)
+# and SVG logo. assets/managed-login.json is the full settings document exported
+# from Cognito's defaults with the palette applied (every key is API-valid).
+resource "aws_cognito_managed_login_branding" "main" {
+  user_pool_id = aws_cognito_user_pool.main.id
+  client_id    = aws_cognito_user_pool_client.main.id
+  settings     = jsonencode(jsondecode(file("${path.module}/assets/managed-login.json")))
+
+  asset {
+    category   = "FORM_LOGO"
+    color_mode = "LIGHT"
+    extension  = "SVG"
+    bytes      = filebase64("${path.module}/assets/logo.svg")
+  }
+
+  asset {
+    category   = "FAVICON_SVG"
+    color_mode = "DYNAMIC"
+    extension  = "SVG"
+    bytes      = filebase64("${path.module}/assets/logo.svg")
+  }
+
+  # The branding style targets the Managed Login domain version
+  depends_on = [aws_cognito_user_pool_domain.main]
 }
 
 locals {
