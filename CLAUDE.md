@@ -44,13 +44,19 @@ time. The root stack treats a null/empty `var.profile` as "ambient credentials" 
 locally (profile) and in CodeBuild (role) — keep it that way when touching `local-exec`/`external`
 commands.
 
-Required on the machine running Terraform, because of `local-exec` and `external` data sources:
-`aws` CLI (with the named profile), `jq`, `bash`, `npm`.
+Required on the machine running Terraform, because of the `local-exec` provisioners: `aws` CLI (with
+the named profile), `jq`, `bash`.
 
 ## Architecture
 
 **Request path.** Client → Route53 alias → **CloudFront** (`cloudfront.tf`, viewer cert in us-east-1,
-`PriceClass_100`) → **VPC origin** → internal ALB (443, in-region ACM cert). CloudFront cache behaviors:
+`PriceClass_100`) → **VPC origin** → **internet-facing** ALB in the public subnets (443, in-region ACM
+cert). Internet-facing is deliberate: its public node IPs let the `authenticate-cognito` action reach
+Cognito (token exchange, JWKS) through the internet gateway — an internal ALB would need a NAT gateway
+for those same calls. It is still unreachable from the internet (SG below). The ALB uses `name_prefix` +
+`create_before_destroy`, and the VPC origin's name/address follow it, because a VPC origin cannot be
+deleted while the distribution references it (replacement = new ALB → new origin → distribution switch →
+old origin → old ALB); a VPC origin also never reaches `Deployed` until its ALB has a listener. CloudFront cache behaviors:
 `/rest*` and the default (authenticated app, OAuth callback) use `CachingDisabled`; `/themes/*` and
 `/favicon.ico` use `CachingOptimized`. Every behavior uses the `AllViewer` origin-request policy — the
 forwarded `Host` header is what makes the ALB host/Cognito rules match AND what lets CloudFront validate
@@ -85,32 +91,31 @@ do not set `readonlyRootFilesystem`, and never mount a Fargate ephemeral volume 
 overrides `jdbc.host` / `jdbc.username` (plus `JDBC_PASSWORD` via Spring relaxed env binding). The
 `container_*` variables are maps keyed by container name — only `ligoj-ui` has entries.
 
-**Bootstrap chain (the fragile part).** Terraform cannot reach the private Aurora cluster, so DB seeding is
-done by proxy through a Lambda, in this order:
+**Bootstrap chain (the fragile part).** Terraform cannot reach the private Aurora cluster over TCP, so
+every SQL statement goes through the **RDS Data API** (`aws rds-data execute-statement`, HTTPS, the
+cluster has `enable_http_endpoint = true`) authenticated with the master-credentials secret — no VPC
+Lambda, no NAT. In order:
 
-1. `lambda_data_api` — a VPC Lambda (`lambda_data_api/index.js`, `pg` driver) that executes an arbitrary
-   base64 SQL string against Aurora using a base64 master-credentials JSON passed in the event; a `null`
-   database in the event targets the `postgres` maintenance DB (needed for `CREATE DATABASE`). SELECTs come
-   back as `{records: [...]}` and writes as `{affectedRows: n}` — `ligoj_new_user.sh` parses that contract.
-   `node_modules` are installed by `terraform_data.lambda_data_api` (`npm ci`), re-triggered only when
-   `package.json`/`package-lock.json`/`index.js` change.
-2. `aws_rds_cluster_instance.main` `local-exec` provisioners (`when = create`) invoke it once per file in
-   `sql/` (create database → create user → make the user own the database).
-3. `aws_cognito_user.admin` creates the admin account (invitation email + temporary password); its `sub`
+1. `aws_rds_cluster_instance.main` `local-exec` provisioners (`when = create`) run the files in `sql/`
+   against the `postgres` maintenance DB (create database → create user → make the user own the
+   database), retrying while the endpoint warms up. `CREATE DATABASE` works through the Data API (verified).
+2. `aws_cognito_user.admin` creates the admin account (invitation email + temporary password); its `sub`
    attribute feeds the next step.
-4. `ligoj_new_user.sh` (run twice, via `terraform_data` **resources** — NEVER convert these back to
+3. `ligoj_new_user.sh` (run twice, via `terraform_data` **resources** — NEVER convert these back to
    data sources: they must execute at apply time only, after `aws_ecs_service.main` reaches steady
    state (`wait_for_steady_state`), because Ligoj creates the schema and seeds `s_role` at first boot)
-   INSERTs into `s_user` / `s_role_assignment` / `s_api_token` via the same Lambda, drawing ids from the
+   INSERTs into `s_user` / `s_role_assignment` / `s_api_token` through the Data API (`--format-records-as
+   JSON`, normalized to `{records: [...]}` / `{affectedRows: n}` inside the script), drawing ids from the
    native `<table>_seq` PostgreSQL sequences (`nextval()`). The `user` column is a PG reserved word and
    stays double-quoted. Tokens are stored with a literal `_plain_` hash marker — the stored value IS
    `_plain_` + the `random_password`, so Terraform never needs to read anything back.
-5. `lambda_pre_signup` (regex email allowlist) and `lambda_post_confirmation` (calls the Ligoj REST API with
+4. `lambda_pre_signup` (regex email allowlist) and `lambda_post_confirmation` (calls the Ligoj REST API with
    the `cognito_sign_up` API token to create the user, grant a role, and optionally create a welcome project +
-   subscription; uses native `fetch`) are attached to the Cognito user pool. All Lambdas run `nodejs22.x`.
+   subscription; uses native `fetch`) are attached to the Cognito user pool. Both run `nodejs22.x` and are
+   plain zips of a single file — no `npm` step anywhere in the stack.
 
-Steps 2 and 4 are ordered by explicit `depends_on` (the Lambda is referenced only by NAME — Terraform
-sees no implicit dependency; keep the `depends_on` when refactoring). `ligoj_new_user.sh` retries up to
+Step 3 waits for the RDS instance and the ECS service through explicit `depends_on` — keep them when
+refactoring. `ligoj_new_user.sh` retries up to
 ~7 minutes per statement and waits up to 10 minutes for the `ADMIN` role to be seeded. A from-scratch
 deployment MUST go through `apply` (the pipeline default): a standalone `plan` of a bootstrapped-but-
 unhealthy stack has nothing to defer and nothing to fix. A partial failure usually means re-running
@@ -161,11 +166,11 @@ unhealthy stack has nothing to defer and nothing to fix. A partial failure usual
   Aurora Performance Insights (7-day free tier), and CloudWatch alarms (ALB 5xx, unhealthy targets,
   ECS CPU/memory, Aurora ACU, CloudFront 5xx rate) publishing to an SNS topic — set `var.alarm_email`
   to subscribe.
-- The helper script writes `*.log` files into the repo root (`ligoj_new_user-<user>.log`,
-  `rds-*.sql.log`). These are gitignored.
+- The helper script writes `ligoj_new_user-<user>.log` into the repo root (gitignored).
 - `.terraform.lock.hcl` is gitignored (the `**.hcl` pattern), so provider pinning is local-only; `~>`
   constraints in `provider.tf` are the real bound.
-- Lambda zips are built into `.build/` (gitignored), NOT `.terraform/`: the pipeline's plan artifact
-  excludes `.terraform/` but must carry the zips to the apply stage. Keep archive `output_path`s there.
+- The two Lambda zips are built into `.build/` (gitignored), NOT `.terraform/`: the pipeline's plan
+  artifact excludes `.terraform/` but must carry the zips to the apply stage. Keep archive `output_path`s
+  there.
 - Both backends use S3 native locking (`use_lockfile = true`, hence Terraform >= 1.10). Never run a
   local apply/destroy while the pipeline may run — and vice versa; the lock now enforces this.

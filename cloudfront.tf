@@ -13,9 +13,13 @@ data "aws_cloudfront_origin_request_policy" "all_viewer" {
 }
 
 # Private path from CloudFront to the internal ALB, no public exposure of the origin
-resource "aws_cloudfront_vpc_origin" "alb" {
+# Address and name follow the ALB: a replaced ALB yields a NEW VPC origin
+# created next to the old one (the distribution then switches, and only then is
+# the old origin deletable). NOTE: the origin only reaches 'Deployed' once the
+# ALB has a listener - a listener-less ALB leaves it 'Deploying' forever.
+resource "aws_cloudfront_vpc_origin" "public" {
   vpc_origin_endpoint_config {
-    name                   = local.name
+    name                   = "${local.name}-${aws_lb.main.name}"
     arn                    = aws_lb.main.arn
     http_port              = 80
     https_port             = 443
@@ -44,7 +48,7 @@ resource "aws_cloudfront_distribution" "main" {
     origin_id   = "alb"
 
     vpc_origin_config {
-      vpc_origin_id = aws_cloudfront_vpc_origin.alb.id
+      vpc_origin_id = aws_cloudfront_vpc_origin.public.id
     }
   }
 

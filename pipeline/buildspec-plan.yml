@@ -7,9 +7,6 @@ env:
 
 phases:
   install:
-    runtime-versions:
-      # npm is required by the lambda_data_api build step of the main stack
-      nodejs: 20
     commands:
       - curl -sSLo /tmp/terraform.zip "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_arm64.zip"
       - unzip -o -q /tmp/terraform.zip -d /usr/local/bin

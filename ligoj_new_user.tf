@@ -32,7 +32,7 @@ resource "random_password" "ligoj_lambda_api_token" {
 # given (see locals below).
 resource "terraform_data" "ligoj_lambda" {
   count      = var.enabled ? 1 : 0
-  depends_on = [aws_lambda_function.data_api, aws_rds_cluster_instance.main, aws_ecs_service.main]
+  depends_on = [aws_rds_cluster_instance.main, aws_ecs_service.main]
 
   # Re-run when the user pool or the database is recreated (the script is idempotent)
   triggers_replace = [aws_cognito_user_pool.main.id, one(aws_rds_cluster.main[*].id)]
@@ -46,8 +46,6 @@ resource "terraform_data" "ligoj_lambda" {
       BOOTSTRAP_INPUT = jsonencode({
         rds_arn        = aws_rds_cluster.main[0].arn
         rds_secret_arn = aws_secretsmanager_secret.rds_master.arn
-        rds_secret_64  = base64encode(aws_secretsmanager_secret_version.rds_master.secret_string)
-        function_name  = local.lambda_data_api_name
         profile        = var.profile == null ? "" : var.profile
         region         = var.region
         username       = local.ligoj_lambda_api_user
@@ -84,8 +82,6 @@ resource "terraform_data" "ligoj_admin" {
       BOOTSTRAP_INPUT = jsonencode({
         rds_arn        = aws_rds_cluster.main[0].arn
         rds_secret_arn = aws_secretsmanager_secret.rds_master.arn
-        rds_secret_64  = base64encode(aws_secretsmanager_secret_version.rds_master.secret_string)
-        function_name  = local.lambda_data_api_name
         profile        = var.profile == null ? "" : var.profile
         region         = var.region
         username       = local.cognito_admin_sub

@@ -1,13 +1,25 @@
-# Internal: only reachable through the CloudFront VPC origin
+# Internet-facing on purpose, yet unreachable from the internet: the security
+# group only admits CloudFront's VPC-origin service SG, so the public node IPs
+# answer nobody else. They exist so that the authenticate-cognito action can
+# reach Cognito (token exchange, JWKS) straight through the internet gateway -
+# an internal ALB would need a NAT gateway for the very same calls.
 resource "aws_lb" "main" {
-  name               = local.name
-  internal           = true
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  # Private subnets: the authenticate-cognito token exchange needs NAT egress
-  subnets                    = aws_subnet.private[*].id
+  # name_prefix (6 chars max) instead of a fixed name: the replacement ALB must
+  # coexist with the one it replaces (create_before_destroy below)
+  name_prefix                = "${substr(var.application, 0, 5)}-"
+  internal                   = false
+  load_balancer_type         = "application"
+  security_groups            = [aws_security_group.alb.id]
+  subnets                    = aws_subnet.main[*].id
   enable_deletion_protection = false
   tags                       = local.tags
+
+  # A VPC origin cannot be deleted while a distribution references it, so a
+  # replacement must go new ALB -> new VPC origin -> distribution update -> old
+  # VPC origin -> old ALB. Destroy-then-create would deadlock on the first step.
+  lifecycle {
+    create_before_destroy = true
+  }
 
   access_logs {
     bucket  = aws_s3_bucket.alb_logs.id
@@ -200,7 +212,7 @@ data "aws_security_group" "cloudfront_vpc_origins" {
   vpc_id = aws_vpc.main.id
 
   # The service SG only exists once the VPC origin is deployed
-  depends_on = [aws_cloudfront_vpc_origin.alb]
+  depends_on = [aws_cloudfront_vpc_origin.public]
 }
 
 resource "aws_security_group_rule" "alb_https" {

@@ -6,9 +6,7 @@ resource "aws_rds_cluster_parameter_group" "main" {
 }
 
 resource "aws_rds_cluster_instance" "main" {
-  count = var.enabled ? 1 : 0
-  # The create provisioners invoke the data API Lambda, referenced only by name
-  depends_on         = [aws_lambda_function.data_api]
+  count              = var.enabled ? 1 : 0
   cluster_identifier = aws_rds_cluster.main[count.index].id
   instance_class     = "db.serverless"
   engine             = aws_rds_cluster.main[count.index].engine
@@ -140,31 +138,29 @@ resource "aws_secretsmanager_secret_version" "rds_app" {
 }
 
 locals {
-  # Seed the database through the data API Lambda: Terraform cannot reach the private Aurora cluster
+  # Seed the database through the RDS Data API (HTTPS, no VPC access needed).
+  # Retried: the endpoint takes a moment to answer after the instance creation
   rds_data_commands = [for script in ["00-create-database.sql", "01-create-user.sql", "02-grant.sql"] : <<-CMD
-    aws lambda invoke \
-    --function-name "${local.lambda_data_api_name}" \
-    --region "${var.region}" \
-    ${local.aws_cli_profile} \
-    --payload '${base64encode(<<-JSON
-{
-  "database": null,
-  "query":   "${base64encode(templatefile("${path.module}/sql/${script}", { db_user = local.db_user, db_password = local.db_password }))}", 
-  "secret":  "${base64encode(aws_secretsmanager_secret_version.rds_master.secret_string)}"
-}
-JSON
-)}' \
-    "rds-${script}.log"
+    for i in $(seq 1 30); do
+      aws rds-data execute-statement --region "${var.region}" ${local.aws_cli_profile} \
+        --resource-arn "${try(aws_rds_cluster.main[0].arn, "")}" \
+        --secret-arn "${aws_secretsmanager_secret.rds_master.arn}" \
+        --database postgres \
+        --sql "${templatefile("${path.module}/sql/${script}", { db_user = local.db_user, db_password = local.db_password })}" && exit 0
+      echo "Data API not ready for ${script}, retrying ($i/30)..."
+      sleep 10
+    done
+    exit 1
 CMD
-]
-# Empty when no profile is set (e.g. CodeBuild, where the role provides credentials)
-aws_cli_profile = var.profile == null || var.profile == "" ? "" : "--profile ${var.profile}"
-db_user         = var.db_user
-db_password     = random_password.rds_app.result
-db_password_arn = aws_secretsmanager_secret_version.rds_app.secret_arn
-db_tdp          = random_password.rds_tdp.result
-db_tdp_arn      = aws_secretsmanager_secret_version.rds_tdp.secret_arn
-db_host         = var.enabled ? aws_rds_cluster.main[0].endpoint : "localhost"
+  ]
+  # Empty when no profile is set (e.g. CodeBuild, where the role provides credentials)
+  aws_cli_profile = var.profile == null || var.profile == "" ? "" : "--profile ${var.profile}"
+  db_user         = var.db_user
+  db_password     = random_password.rds_app.result
+  db_password_arn = aws_secretsmanager_secret_version.rds_app.secret_arn
+  db_tdp          = random_password.rds_tdp.result
+  db_tdp_arn      = aws_secretsmanager_secret_version.rds_tdp.secret_arn
+  db_host         = var.enabled ? aws_rds_cluster.main[0].endpoint : "localhost"
 }
 
 resource "aws_security_group" "aurora" {
@@ -181,15 +177,6 @@ resource "aws_security_group_rule" "aurora_from_ecs" {
   source_security_group_id = aws_security_group.ecs.id
   security_group_id        = aws_security_group.aurora.id
 }
-resource "aws_security_group_rule" "aurora_from_data_api" {
-  type                     = "ingress"
-  from_port                = 5432
-  to_port                  = 5432
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.data_api.id
-  security_group_id        = aws_security_group.aurora.id
-}
-
 resource "aws_security_group_rule" "aurora_egress" {
   type              = "egress"
   from_port         = 0

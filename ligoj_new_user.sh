@@ -4,12 +4,13 @@
 #  Inspiration: https://gist.github.com/irvingpop/968464132ded25a206ced835d50afa6b
 #  by Irving Popovetsky <irving@popovetsky.com>
 #
-# Executes PostgreSQL statements against the Aurora cluster, either through the
-# data API Lambda (default) or through the RDS Data API (USE_DATA_API=1).
+# Executes PostgreSQL statements against the Aurora cluster through the RDS
+# Data API (HTTPS, no VPC access needed), authenticating with the master
+# credentials secret. Each statement result is normalized to the historical
+# contract: {records: [...]} for SELECTs, {affectedRows: n} for writes.
 
 MESSAGES="[]"
 LOG_FILE="ligoj_new_user.log"
-USE_DATA_API="0"
 ROLE_ADMIN="ADMIN"
 function log_info() {
   local MSG="$1"
@@ -30,11 +31,9 @@ function check_deps() {
 
 function parse_input() {
   # jq reads from stdin so we don't have to set up any inputs, but let's validate the outputs
-  eval "$(jq -r '@sh "export RDS_ARN=\(.rds_arn) FUNCTION_NAME=\(.function_name) RDS_SECRET_ARN=\(.rds_secret_arn) RDS_SECRET_64=\(.rds_secret_64) PROFILE=\(.profile) REGION=\(.region) USERNAME=\(.username) POOL_ID=\(.user_pool) DATABASE=\(.database) API_TOKEN_NAME=\(.api_token_name) API_TOKEN=\(.api_token)"')"
+  eval "$(jq -r '@sh "export RDS_ARN=\(.rds_arn) RDS_SECRET_ARN=\(.rds_secret_arn) PROFILE=\(.profile) REGION=\(.region) USERNAME=\(.username) POOL_ID=\(.user_pool) DATABASE=\(.database) API_TOKEN_NAME=\(.api_token_name) API_TOKEN=\(.api_token)"')"
   if [[ -z "${RDS_ARN}" ]]; then export RDS_ARN=none; fi
-  if [[ -z "${FUNCTION_NAME}" ]]; then export FUNCTION_NAME=none; fi
   if [[ -z "${RDS_SECRET_ARN}" ]]; then export RDS_SECRET_ARN=none; fi
-  if [[ -z "${RDS_SECRET_64}" ]]; then export RDS_SECRET_64=none; fi
   if [[ -z "${PROFILE}" ]]; then export PROFILE=none; fi
   if [[ -z "${REGION}" ]]; then export REGION=none; fi
   if [[ -z "${USERNAME}" ]]; then export USERNAME=none; fi
@@ -55,38 +54,20 @@ function execute_sql() {
   local SQL="$1"
   local waitMax=45
   while true; do
-    local result=""
-    if [ "$USE_DATA_API" == "1" ]; then
-      log_info "aws rds-data execute-statement --region $REGION --database $DATABASE --resource-arn $RDS_ARN --secret-arn $RDS_SECRET_ARN --profile $PROFILE"
-      result="$(aws rds-data execute-statement --region "$REGION" --database "$DATABASE" --resource-arn "$RDS_ARN" --secret-arn "$RDS_SECRET_ARN" "${PROFILE_ARG[@]}" --sql "${SQL:Q}" 2>&1)"
-    else
-      local encoded_sql="$(echo "$SQL" | base64)"
-      local encoded_payload="$(echo '{ 
-        "database": "'$DATABASE'",
-        "query": "'$encoded_sql'", 
-        "secret": "'$RDS_SECRET_64'"
-      }'| base64)"
-      log_info "$SQL"
-      rm -f "ligoj_new_user-invoke-payload.log"
-      result="$(aws lambda invoke --region $REGION "${PROFILE_ARG[@]}" --function-name $FUNCTION_NAME --payload "$encoded_payload" "ligoj_new_user-invoke-payload.log")"
+    log_info "$SQL"
+    local raw
+    raw="$(aws rds-data execute-statement --region "$REGION" "${PROFILE_ARG[@]}" --resource-arn "$RDS_ARN" --secret-arn "$RDS_SECRET_ARN" --database "$DATABASE" --format-records-as JSON --sql "$SQL" --output json 2>&1)"
+    if [ "$?" == "0" ]; then
+      # SELECTs carry their rows as a JSON string in formattedRecords; writes only report a count
+      local result
+      result="$(echo "$raw" | jq -c '{records: ((.formattedRecords // "[]") | fromjson), affectedRows: (.numberOfRecordsUpdated // 0)}')"
+      log_info "Succeed: $result"
+      set -e
+      echo -n "$result"
+      return 0
     fi
-    if [ "$?" == "0" -a "$result" != "" ] && ! grep -q '"FunctionError"' <<<"$result"; then
-      if [ "$USE_DATA_API" == "1" ]; then
-        log_info "Succeed: $result"
-      elif [ -f "ligoj_new_user-invoke-payload.log" ]; then
-        cat "ligoj_new_user-invoke-payload.log" >> "$LOG_FILE"
-        echo "" >> "$LOG_FILE"
-        result="$(cat "ligoj_new_user-invoke-payload.log")"
-        rm -f "ligoj_new_user-invoke-payload.log"
-      fi
-      break
-    fi
-    log_info "Retrying: $result"
-    if [ -f "ligoj_new_user-invoke-payload.log" ]; then
-      cat "ligoj_new_user-invoke-payload.log" >> "$LOG_FILE"
-      echo "" >> "$LOG_FILE"
-      rm -f "ligoj_new_user-invoke-payload.log"
-    fi
+    # Cluster still starting, Data API endpoint warming up, or transient throttling
+    log_info "Retrying: $raw"
     sleep 10
     waitMax=$(($waitMax - 1))
     if [[ "$waitMax" == "0" ]]; then
@@ -95,8 +76,6 @@ function execute_sql() {
       exit 2
     fi
   done
-  set -e
-  echo -n "$result"
 }
 
 function next_id() {
