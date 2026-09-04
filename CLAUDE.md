@@ -56,7 +56,10 @@ Cognito (token exchange, JWKS) through the internet gateway — an internal ALB 
 for those same calls. It is still unreachable from the internet (SG below). The ALB uses `name_prefix` +
 `create_before_destroy`, and the VPC origin's name/address follow it, because a VPC origin cannot be
 deleted while the distribution references it (replacement = new ALB → new origin → distribution switch →
-old origin → old ALB); a VPC origin also never reaches `Deployed` until its ALB has a listener. CloudFront cache behaviors:
+old origin → old ALB); a VPC origin also never reaches `Deployed` until its ALB has a listener.
+**Replacing the ALB takes two applies**: create_before_destroy propagates to the listener rules, whose
+first creation fails with `TargetGroupAssociationLimit` (the target group is still held by the old
+rules) — the site answers 403 until the second apply converges. Rare (scheme/subnet changes only). CloudFront cache behaviors:
 `/rest*` and the default (authenticated app, OAuth callback) use `CachingDisabled`; `/themes/*` and
 `/favicon.ico` use `CachingOptimized`. Every behavior uses the `AllViewer` origin-request policy — the
 forwarded `Host` header is what makes the ALB host/Cognito rules match AND what lets CloudFront validate
