@@ -16,6 +16,8 @@ phases:
       - terraform init -no-color -backend-config="bucket=${TF_STATE_BUCKET}" -backend-config="key=${TF_STATE_KEY}" -backend-config="region=${TF_STATE_REGION}"
       # Deployment values live outside the repository ('profile' must NOT be set in them)
       - if [ -n "${TFVARS_S3_URI}" ]; then aws s3 cp "${TFVARS_S3_URI}" pipeline.auto.tfvars; fi
+      # A 'profile' line would point Terraform at a workstation profile CodeBuild does not have
+      - if [ -f pipeline.auto.tfvars ]; then sed -i '/^[[:space:]]*profile[[:space:]]*=/d' pipeline.auto.tfvars; fi
       - terraform plan -no-color -out=tfplan
 
 # Hand the workspace and the plan file over to the apply stage.

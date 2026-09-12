@@ -159,6 +159,41 @@ def check_credentials(aws: Aws, interactive: bool) -> None:
     phase.done()
 
 
+def check_ci_tfvars(aws: Aws, app: str, tfvars_path: str, interactive: bool) -> None:
+    """The pipeline reads its variables from S3: warn on drift, refuse a 'profile' line."""
+    phase = Phase("CI variables (S3)")
+    proj = aws.try_call("codebuild", "batch-get-projects", "--names", f"{app}-deploy-apply")
+    env = ((proj or {}).get("projects") or [{}])[0].get("environment", {}).get("environmentVariables", [])
+    uri = next((v["value"] for v in env if v["name"] == "TFVARS_S3_URI"), "")
+    if not uri:
+        log(dim("no TFVARS_S3_URI on the apply project: skipped"))
+        phase.done()
+        return
+    remote = aws.try_call("s3", "cp", uri, "-", raw=True) or ""
+    local = ""
+    if os.path.isfile(tfvars_path):
+        local = "".join(l for l in open(tfvars_path, encoding="utf-8") if not re.match(r"^\s*profile\s*=", l))
+    has_profile = re.search(r"^\s*profile\s*=", remote, re.M) is not None
+    drift = bool(local) and remote.strip() != local.strip()
+    if has_profile:
+        log(red(f"{uri} contains a 'profile' line: the deploy would fail (no such profile in CodeBuild)"))
+    elif drift:
+        log(yellow(f"{uri} differs from {os.path.basename(tfvars_path)} (without its profile line)"))
+    if (has_profile or drift) and local:
+        if interactive and input(f"Publish {os.path.basename(tfvars_path)} (minus profile) to {uri}? [Y/n] ").strip().lower() in ("", "y", "yes"):
+            proc = subprocess.run(aws.base() + ["s3", "cp", "-", uri], input=local, text=True, capture_output=True)
+            if proc.returncode != 0:
+                phase.done(False)
+                sys.exit(red(proc.stderr.strip()))
+            log(green("published"))
+        elif has_profile:
+            phase.done(False)
+            sys.exit(red("fix the CI tfvars first (see README.saas.md, 'Configuration changes')"))
+    else:
+        log(f"{uri} is in sync")
+    phase.done()
+
+
 # --------------------------------------------------------------------------- config
 
 def read_tfvars(path: str) -> dict[str, str]:
@@ -306,6 +341,48 @@ def readiness(dns: str, cookie: str | None, minutes: int) -> bool:
             phase.done(False)
             return False
         time.sleep(10)
+
+
+def recent_container_logs(aws: Aws, environment: str, since: dt.datetime, lines: int = 25) -> None:
+    """Last lines of each container (all levels), to see how a task died or what it printed."""
+    since_ms = int(since.timestamp() * 1000)
+    for name in ("api", "ui"):
+        group = f"/ecs/ligoj-{name}-{environment}"
+        data = aws.try_call("logs", "filter-log-events", "--log-group-name", group, "--start-time", str(since_ms))
+        events = (data or {}).get("events", [])
+        log(bold(f"{group}: last {min(lines, len(events))} of {len(events)} lines since {since.strftime('%H:%M:%S')} UTC"))
+        for ev in events[-lines:]:
+            ts = dt.datetime.fromtimestamp(ev["timestamp"] / 1000).strftime("%H:%M:%S")
+            log(dim(f"  [{name}] {ts} ") + ev["message"].rstrip()[:220])
+
+
+def diagnose_service(aws: Aws, app: str, environment: str, since: dt.datetime) -> None:
+    """Why is the application not healthy: ECS view, target group view, container logs."""
+    log(bold("Diagnosis"))
+    svc = aws.try_call("ecs", "describe-services", "--cluster", app, "--services", app)
+    if svc and svc.get("services"):
+        s = svc["services"][0]
+        for d in s.get("deployments", []):
+            log(f"deployment {d['status']}: {d.get('rolloutState', '?')} running {d['runningCount']}/{d['desiredCount']}"
+                f" pending {d.get('pendingCount', 0)} failed {d.get('failedTasks', 0)} {dim(d['taskDefinition'].split('/')[-1])}")
+            if d.get("rolloutStateReason"):
+                log(red(f"  {d['rolloutStateReason']}"))
+        for ev in s.get("events", [])[:8]:
+            log(dim(f"  event {ev['createdAt'][11:19]} ") + ev["message"][:200])
+    for reason in stopped_task_reasons(aws, app, since):
+        log(red(f"stopped task: {reason}"))
+    tgs = aws.try_call("elbv2", "describe-target-groups", "--names", f"ligoj-ui-{environment}")
+    for tg in (tgs or {}).get("TargetGroups", []):
+        health = aws.try_call("elbv2", "describe-target-health", "--target-group-arn", tg["TargetGroupArn"])
+        targets = (health or {}).get("TargetHealthDescriptions", [])
+        if not targets:
+            log(red(f"target group {tg['TargetGroupName']}: no registered target"))
+        for t in targets:
+            th = t["TargetHealth"]
+            state = th["State"]
+            mark = green(state) if state == "healthy" else red(state)
+            log(f"target {t['Target']['Id']}:{t['Target'].get('Port', '')} {mark} {th.get('Reason', '')} {th.get('Description', '')}")
+    recent_container_logs(aws, environment, since)
 
 
 # --------------------------------------------------------------------------- pipelines (diagnostics)
@@ -470,9 +547,9 @@ def run_release(aws: Aws, cfg: argparse.Namespace, app: str, environment: str) -
                             log(f"ECR {repo}: {mark} {short(img['digest'])} {img['tags']}")
                         if not cfg.skip_build and all(baseline.get(r, {}).get("digest") == i["digest"] for r, i in images.items()):
                             log(yellow("the build pushed no new digest: the deploy will roll out the same images"))
-            succeeded = ev.get("taskSucceededEventDetails")
-            if succeeded and succeeded.get("output"):
-                out = json.loads(succeeded["output"])
+            exited = ev.get("stateExitedEventDetails", {})
+            if exited.get("name") in ("StartBuild", "StartDeploy") and exited.get("output"):
+                out = json.loads(exited["output"])
                 for key, ph in (("build_execution", "build"), ("deploy_execution", "deploy")):
                     if key in out and ph not in exec_ids:
                         exec_ids[ph] = out[key]["PipelineExecutionId"]
@@ -523,11 +600,10 @@ def run_release(aws: Aws, cfg: argparse.Namespace, app: str, environment: str) -
         if failed_phase in exec_ids:
             diagnose_pipeline(aws, app, pipelines[failed_phase], exec_ids[failed_phase])
         if failed_phase in ("deploy", "rollout") and deploy_started:
-            for reason in stopped_task_reasons(aws, app, deploy_started):
-                log(red(f"stopped task: {reason}"))
             if scanner:
                 scanner.poll()
                 log(scanner.summary())
+            diagnose_service(aws, app, environment, deploy_started)
         return False, deploy_started or start_utc
 
     return True, deploy_started or start_utc
@@ -563,7 +639,10 @@ def verify(aws: Aws, cfg: argparse.Namespace, app: str, environment: str, since:
         time.sleep(10)
     log(scanner.summary())
     phase.done(scanner.errors == 0, "" if scanner.errors == 0 else yellow("errors logged, review above"))
-    return ok and scanner.errors == 0
+    healthy = ok and scanner.errors == 0
+    if not healthy:
+        diagnose_service(aws, app, environment, since)
+    return healthy
 
 
 # --------------------------------------------------------------------------- main
@@ -596,7 +675,10 @@ def main() -> int:
 
     aws = Aws(cfg.profile, cfg.region)
     log(bold(f"Ligoj release: {app} in {cfg.region}, https://{cfg.dns}"))
-    check_credentials(aws, interactive=not cfg.non_interactive and sys.stdin.isatty())
+    interactive = not cfg.non_interactive and sys.stdin.isatty()
+    check_credentials(aws, interactive=interactive)
+    if not cfg.check_only:
+        check_ci_tfvars(aws, app, cfg.tfvars, interactive)
 
     try:
         if cfg.check_only:
