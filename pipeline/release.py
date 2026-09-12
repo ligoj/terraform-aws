@@ -258,14 +258,36 @@ def stopped_task_reasons(aws: Aws, app: str, since: dt.datetime) -> list[str]:
         if stopped and dt.datetime.fromisoformat(stopped.replace("Z", "+00:00")) < since:
             continue
         codes = ", ".join(f"{c['name']}:exit={c.get('exitCode', '?')}" for c in t.get("containers", []))
-        reasons.append(f"{t.get('stoppedReason', '?')} [{codes}]")
+        reason = t.get("stoppedReason", "?")
+        if reason.startswith("Scaling activity initiated by (deployment"):
+            reason += " (expected: previous task replaced by the rolling update)"
+        reasons.append(f"{reason} [{codes}]")
     return reasons
 
 
 class LogScanner:
-    """Follows the WARN/ERROR lines of both containers since a given instant."""
+    """Follows the WARN/ERROR lines of both containers since a given instant.
+
+    Only the log LEVEL decides: ERROR/FATAL lines and stack traces are errors (they
+    fail the release), WARN lines are reported but never fatal, and a benign INFO
+    line that merely contains 'Error' or 'Exception' in its text is ignored."""
 
     PATTERN = "?WARN ?ERROR ?Exception ?FATAL"
+    LEVEL = re.compile(r"\b(TRACE|DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL)\b")
+    TRACE = re.compile(r"^(\s+at |Caused by: |[A-Za-z0-9_.$]+(Exception|Error): )")
+
+    @classmethod
+    def classify(cls, msg: str) -> str | None:
+        """'error', 'warning' or None (not worth reporting)."""
+        m = cls.LEVEL.search(msg[:120])
+        level = m.group(1) if m else None
+        if level in ("ERROR", "FATAL"):
+            return "error"
+        if level in ("WARN", "WARNING"):
+            return "warning"
+        if level is None and cls.TRACE.search(msg):
+            return "error"
+        return None
 
     def __init__(self, aws: Aws, environment: str, since: dt.datetime):
         self.aws = aws
@@ -274,6 +296,7 @@ class LogScanner:
         self.seen: set[str] = set()
         self.counts = {"api": 0, "ui": 0}
         self.errors = 0
+        self.warnings = 0
 
     def poll(self, max_print: int = 20) -> None:
         printed = 0
@@ -287,10 +310,14 @@ class LogScanner:
                 if ev["eventId"] in self.seen:
                     continue
                 self.seen.add(ev["eventId"])
-                self.counts[name] += 1
                 msg = ev["message"].rstrip()
-                is_error = re.search(r"ERROR|Exception|FATAL", msg) is not None
+                kind = self.classify(msg)
+                if kind is None:
+                    continue
+                self.counts[name] += 1
+                is_error = kind == "error"
                 self.errors += is_error
+                self.warnings += not is_error
                 if printed < max_print:
                     ts = dt.datetime.fromtimestamp(ev["timestamp"] / 1000).strftime("%H:%M:%S")
                     tag = red(f"[{name}]") if is_error else yellow(f"[{name}]")
@@ -298,7 +325,8 @@ class LogScanner:
                     printed += 1
 
     def summary(self) -> str:
-        return f"api: {self.counts['api']} warn/error lines, ui: {self.counts['ui']} (errors: {self.errors})"
+        return (f"api: {self.counts['api']} lines, ui: {self.counts['ui']} "
+                f"(warnings: {self.warnings}, errors: {self.errors})")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -370,7 +398,7 @@ def diagnose_service(aws: Aws, app: str, environment: str, since: dt.datetime) -
         for ev in s.get("events", [])[:8]:
             log(dim(f"  event {ev['createdAt'][11:19]} ") + ev["message"][:200])
     for reason in stopped_task_reasons(aws, app, since):
-        log(red(f"stopped task: {reason}"))
+        log((dim if "(expected:" in reason else red)(f"stopped task: {reason}"))
     tgs = aws.try_call("elbv2", "describe-target-groups", "--names", f"ligoj-ui-{environment}")
     for tg in (tgs or {}).get("TargetGroups", []):
         health = aws.try_call("elbv2", "describe-target-health", "--target-group-arn", tg["TargetGroupArn"])
@@ -638,7 +666,10 @@ def verify(aws: Aws, cfg: argparse.Namespace, app: str, environment: str, since:
             break
         time.sleep(10)
     log(scanner.summary())
-    phase.done(scanner.errors == 0, "" if scanner.errors == 0 else yellow("errors logged, review above"))
+    note = "" if scanner.errors == 0 else red("errors logged, review above")
+    if scanner.errors == 0 and scanner.warnings:
+        note = yellow(f"{scanner.warnings} warning(s), not blocking")
+    phase.done(scanner.errors == 0, note)
     healthy = ok and scanner.errors == 0
     if not healthy:
         diagnose_service(aws, app, environment, since)
