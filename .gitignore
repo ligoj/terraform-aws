@@ -35,3 +35,4 @@ main-private.*.tfvars
 README.*.md
 # Lambda build artifacts
 .build/
+pipeline/__pycache__/release.cpython-312.pyc
