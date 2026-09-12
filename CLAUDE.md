@@ -47,6 +47,14 @@ commands.
 Required on the machine running Terraform, because of the `local-exec` provisioners: `aws` CLI (with
 the named profile), `jq`, `bash`.
 
+**Releasing is done with `pipeline/release.py`** (python3 + AWS CLI, no other dependency): it checks the
+credentials (offers `aws sso login`), starts the `<app>-deploy-release` Step Functions workflow
+(`pipeline/stepfunctions.tf`: docker pipeline → deploy pipeline → ECS `COMPLETED` deployment, SDK
+integrations only), and adds the client-side checks — ECR newest digest vs running task, live ECS
+rollout, WARN/ERROR lines of both containers, HTTP readiness (`/favicon.ico` 200, `/` → Cognito 302,
+using `web_acl_secret_cookie` from the tfvars for the WAF), per-phase timings, diagnostics on failure.
+`--skip-build` redeploys the current ECR images; `--check-only` verifies the running deployment.
+
 ## Architecture
 
 **Request path.** Client → Route53 alias → **CloudFront** (`cloudfront.tf`, viewer cert in us-east-1,

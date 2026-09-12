@@ -342,6 +342,65 @@ def diagnose_pipeline(aws: Aws, app: str, pipeline: str, execution_id: str) -> N
             log(dim("  | ") + line[:220])
 
 
+class BuildLogTail:
+    """Incrementally reads a CodeBuild log stream and surfaces the lines worth showing."""
+
+    # Lines printed permanently (after stripping the BuildKit '#12 34.5 ' prefix)
+    INTERESTING = re.compile(
+        r"^\[Container\].*(Entering phase|Phase complete|COMMAND_EXECUTION_ERROR)"      # CodeBuild phases
+        r"|^Step \d+/\d+ :"                                                          # classic docker build
+        r"|^#\d+ \[[^\]]+\] (RUN|COPY|FROM)"                                          # BuildKit steps
+        r"|^(Successfully (built|tagged)|.*: digest: sha256:.*size:)"                # image built / pushed
+        r"|^\[INFO\] (Building |BUILD (SUCCESS|FAILURE)|--- )|^\[ERROR\]"            # Maven milestones
+        r"|^(\S+: (Creating|Modifying|Destroying|Creation complete|Modifications complete|Destruction complete))"
+        r"|^\S+: Still (creating|modifying|destroying)\.\.\. \[\d+m0s elapsed\]"       # terraform, once a minute
+        r"|^(Plan:|Apply complete|Error:|Waiting for SES|Data API not ready|prepare-build\.sh:)")
+    PREFIX = re.compile(r"^#\d+ [\d.]+ ")
+
+    def __init__(self, aws: Aws, app: str, external_id: str):
+        project, _, uuid = external_id.partition(":")
+        self.aws = aws
+        self.group = f"/codebuild/{app}-deploy"
+        self.stream = f"{project.replace(f'{app}-deploy-', '')}/{uuid}"
+        self.token: str | None = None
+        self.last_line = ""
+        self.last_shown = ""
+        self.last_print = time.monotonic()
+
+    def poll(self, max_print: int = 15) -> None:
+        args = ["logs", "get-log-events", "--log-group-name", self.group, "--log-stream-name", self.stream,
+                "--start-from-head", "--limit", "500"]
+        if self.token:
+            args += ["--next-token", self.token]
+        data = self.aws.try_call(*args) if self.token else self._first(args)
+        if not data:
+            return
+        self.token = data.get("nextForwardToken", self.token)
+        printed = 0
+        for ev in data.get("events", []):
+            line = self.PREFIX.sub("", ev["message"].rstrip())
+            if not line:
+                continue
+            self.last_line = line
+            # BuildKit re-emits a step header each time the step progresses: show it once
+            if printed < max_print and line != self.last_shown and self.INTERESTING.search(line):
+                self.last_shown = line
+                log(dim("  | ") + line[:200])
+                printed += 1
+                self.last_print = time.monotonic()
+        # Heartbeat: something is happening even when nothing matched for a while
+        if printed == 0 and self.last_line and time.monotonic() - self.last_print > 120:
+            log(dim("  | ... ") + self.last_line[:180])
+            self.last_print = time.monotonic()
+
+    def _first(self, args: list[str]):
+        # The stream appears a few seconds after the build starts: silent until then
+        try:
+            return self.aws(*args)
+        except AwsError:
+            return None
+
+
 # --------------------------------------------------------------------------- release workflow
 
 STATE_PHASE = {
@@ -379,6 +438,8 @@ def run_release(aws: Aws, cfg: argparse.Namespace, app: str, environment: str) -
     scanner: LogScanner | None = None
     deploy_started: dt.datetime | None = None
     final_status = "RUNNING"
+    last_action_key = ""
+    tail: BuildLogTail | None = None
     deadline = time.monotonic() + cfg.timeout * 60
 
     while True:
@@ -420,12 +481,21 @@ def run_release(aws: Aws, cfg: argparse.Namespace, app: str, environment: str) -
         if final_status != "RUNNING":
             break
 
-        # live detail of the current phase
+        # live detail of the current phase: stage transitions, then the build log itself
         if phase_name in ("build", "deploy") and phase_name in exec_ids:
             action = latest_action(aws, pipelines[phase_name], exec_ids[phase_name])
             if action:
-                status_line(f"{pipelines[phase_name]}: {action['stageName']}.{action['actionName']} {action['status']}"
-                            f" {dim('(' + elapsed(phase_obj.start) + ')')}")
+                key = f"{action['stageName']}.{action['actionName']} {action['status']}"
+                if key != last_action_key:
+                    log(f"{pipelines[phase_name]}: {key}")
+                    last_action_key = key
+                ext = action.get("output", {}).get("executionResult", {}).get("externalExecutionId", "")
+                if ":" in ext and (tail is None or tail.stream.split("/")[-1] != ext.partition(":")[2]):
+                    tail = BuildLogTail(aws, app, ext)
+                    log(dim(f"tailing CloudWatch {tail.group} {tail.stream}"))
+                if tail:
+                    tail.poll()
+                status_line(f"{key} {dim('(' + elapsed(phase_obj.start) + ')')} {dim(tail.last_line[:100] if tail else '')}")
         if phase_name in ("deploy", "rollout"):
             svc = aws.try_call("ecs", "describe-services", "--cluster", app, "--services", app)
             if svc:
