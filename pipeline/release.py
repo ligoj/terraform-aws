@@ -556,4 +556,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        # Covers the prompts and the SSO login subprocess too: no stack trace on Ctrl+C
+        print()
+        print(yellow("interrupted"))
+        sys.exit(130)
