@@ -77,10 +77,12 @@ from the ENI's in-VPC IP — a VPC-CIDR rule silently drops it). The CloudFront 
 ALB certs cover the same domain, so the CloudFront cert validation reuses the ALB validation records.
 Optional edge controls: `cloudfront_allowed_countries` (geo allowlist) and the WAF (`waf.tf`): an
 existing `web_acl_arn`, or a generated Web ACL when `web_acl_allowed_paths` (URI-path regex allowlist of
-the routes the app serves — default on, evaluated first and for everybody, `/manage` excluded on purpose)
-and/or `web_acl_allowed_ipset_arns` (list of us-east-1 CLOUDFRONT-scope IP sets; empty = no IP
-restriction; `web_acl_secret_cookie` = `waf_bypass` cookie bypass) are set. CloudFront only accepts Web
-ACL ARNs, never IP set ARNs. A new UI route must be added to `web_acl_allowed_paths` or it is 403 at the edge.
+the routes the app serves — default on, `/manage` excluded on purpose) and/or `web_acl_allowed_ipset_arns`
+(list of us-east-1 CLOUDFRONT-scope IP sets; empty = no IP restriction; `web_acl_secret_cookie` =
+`waf_bypass` cookie bypass) are set. WAF bills per rule, so the policy is a SINGLE allow rule —
+`known route AND (IP set… OR cookie)` — with a BLOCK default; `local.waf_shape` picks the statement
+nesting (and/or need two operands). CloudFront only accepts Web ACL ARNs, never IP set ARNs. A new UI
+route must be added to `web_acl_allowed_paths` or it is 403 at the edge.
 The ALB HTTPS listener defaults to a 403 fixed response; traffic is only forwarded by listener rules,
 keyed by container name (`for_each` over the `container_*` maps) in priority bands defined in `alb.tf`:
 
