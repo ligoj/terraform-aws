@@ -256,14 +256,28 @@ variable "cloudfront_allowed_countries" {
 }
 
 variable "web_acl_arn" {
-  description = "Existing WAFv2 Web ACL ARN (CLOUDFRONT scope, us-east-1) attached to the distribution. Empty means no WAF, unless an IP set is given below"
+  description = "Existing WAFv2 Web ACL ARN (CLOUDFRONT scope, us-east-1) attached to the distribution as-is. Empty: a Web ACL is generated from the two variables below when at least one is set"
   type        = string
   default     = ""
 }
-variable "web_acl_allowed_ipset_arn" {
-  description = "Existing WAFv2 IP set ARN (CLOUDFRONT scope, us-east-1): when set, a Web ACL is created allowing only these IPs and attached to the distribution"
-  type        = string
-  default     = ""
+variable "web_acl_allowed_ipset_arns" {
+  description = "Existing WAFv2 IP set ARNs (CLOUDFRONT scope, us-east-1): when non-empty, only these IPs (or the secret cookie) get through. Empty: no IP restriction"
+  type        = list(string)
+  default     = []
+}
+variable "web_acl_allowed_paths" {
+  description = "Regexes (WAFv2 syntax, at most 10) of the URI paths the application serves: anything else is blocked at the edge, for everybody. Empty: no route restriction. Default: the Ligoj UI pages, the ALB Cognito callback, the REST API, the plugin resources under /main and the static bundles; /manage (actuator) is deliberately absent"
+  type        = list(string)
+  default = [
+    "^/$",
+    "^/(index|login|login-by-api-key|logout|mfa|400|401|403|404|405|500|503)\\.html$",
+    "^/login(/mfa(/passkey)?|-by-api-key)?$",
+    "^/oauth2/idpresponse$",
+    "^/favicon\\.ico$",
+    "^/rest(/|$)",
+    "^/main/[A-Za-z0-9._/-]+\\.(html|css|js|json|map|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot)$",
+    "^/(dist|lib|assets|themes)/[A-Za-z0-9._/-]+$",
+  ]
 }
 
 variable "web_acl_secret_cookie" {

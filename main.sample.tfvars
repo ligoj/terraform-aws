@@ -34,3 +34,8 @@ cognito_email_filter_message = "Only corporate staff can sign up to this applica
 #ecs_stop_schedule     = "cron(0 20 ? * MON-FRI *)"
 #ecs_start_schedule    = "cron(0 7 ? * MON-FRI *)"
 #ecs_schedule_timezone = "Europe/Paris"
+
+# Edge Web ACL (us-east-1 WAFv2). The known application routes are always enforced
+# (web_acl_allowed_paths default, set [] to disable); IP sets restrict the sources
+#web_acl_allowed_ipset_arns = ["arn:aws:wafv2:us-east-1:123456789012:global/ipset/office/..."]
+#web_acl_secret_cookie      = "some-random-uuid" # 'waf_bypass' cookie value bypassing the IP allowlist
