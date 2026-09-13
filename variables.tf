@@ -271,7 +271,7 @@ variable "web_acl_allowed_paths" {
   default = [
     "^/$",
     "^/(index|login|login-by-api-key|logout|mfa|400|401|403|404|405|500|503)\\.html$",
-    "^/login(/mfa(/passkey)?|-by-api-key)?$",
+    "^/(login(/mfa(/passkey)?|-by-api-key)?|logout)$",
     "^/oauth2/idpresponse$",
     "^/favicon\\.ico$",
     "^/rest(/|$)",
