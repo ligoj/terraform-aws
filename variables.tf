@@ -154,7 +154,7 @@ variable "cognito_dns_prefix" {
 }
 variable "ligoj_plugins" {
   type    = string
-  default = "plugin-id,plugin-id-cognito"
+  default = "plugin-id,plugin-id-cognito,plugin-iam-node"
 }
 variable "ligoj_sign_up_role" {
   type    = string
