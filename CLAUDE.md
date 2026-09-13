@@ -99,7 +99,11 @@ login is the Cognito `sub` (UUID), not the email.**
 (`jsonencode(jsondecode(templatefile(...)))`) into a single Fargate task. Only `ligoj-ui` is exposed (8080,
 ALB target group); it calls `ligoj-api` over `http://localhost:8081/ligoj-api`. `ligoj-api` mounts EFS at
 `/home/ligoj` **through an access point forcing uid/gid 1001** (the non-root user of the 4.x/5.x
-images) and pulls DB/crypto secrets from Secrets Manager. Both containers need a **writable root
+images) and pulls DB/crypto secrets from Secrets Manager. Two IAM roles: the **execution role**
+(`aws_iam_role.task`: image pull, secrets at start) and the **task role** (`aws_iam_role.app`: what
+the running containers may call — today the Cognito read operations on the pool for
+`plugin-id-cognito`, which signs its own requests from `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`; ECS
+only injects that endpoint when `task_role_arn` is set, so new AWS calls from the app go there). Both containers need a **writable root
 filesystem** (Jetty temp dirs in `/tmp`, the UI's startup `sed` of the SPA context placeholder) —
 do not set `readonlyRootFilesystem`, and never mount a Fargate ephemeral volume over `/tmp`
 (Fargate mounts them root-owned 0755, unwritable for uid 1001). Ligoj 4.x defaults to PostgreSQL

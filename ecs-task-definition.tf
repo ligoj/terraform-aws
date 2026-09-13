@@ -5,6 +5,10 @@ resource "aws_ecs_task_definition" "main" {
   cpu                      = var.cpu * 1024
   memory                   = var.ram
   execution_role_arn       = aws_iam_role.task.arn
+  # Task role = the identity of the RUNNING containers. Without it ECS injects no
+  # AWS_CONTAINER_CREDENTIALS_RELATIVE_URI, and the Cognito plugin (which signs its
+  # own requests with the host role credentials) has no credentials at all
+  task_role_arn = aws_iam_role.app.arn
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -80,4 +84,42 @@ resource "aws_iam_policy" "task_secret" {
 resource "aws_iam_role_policy_attachment" "task_secret" {
   role       = aws_iam_role.task.name
   policy_arn = aws_iam_policy.task_secret.arn
+}
+
+# --- Task role: what the application itself may call (distinct from the execution
+# role, which only pulls the image and reads the secrets at task start) ---
+resource "aws_iam_role" "app" {
+  name               = "${local.name}-ecs-app"
+  assume_role_policy = data.aws_iam_policy_document.assume_role_policy.json
+  tags               = local.tags
+}
+
+# plugin-id-cognito (UserCognitoRepository): DescribeUserPool, ListUsers, AdminGetUser
+# on the pool of this stack; the group operations cover the next plugin versions
+resource "aws_iam_policy" "app_cognito" {
+  name        = "${local.name}-ecs-app-cognito"
+  description = "Ligoj Cognito identity plugin, read-only on the user pool"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:DescribeUserPool",
+          "cognito-idp:ListUsers",
+          "cognito-idp:AdminGetUser",
+          "cognito-idp:GetGroup",
+          "cognito-idp:ListGroups",
+          "cognito-idp:AdminListGroupsForUser",
+          "cognito-idp:ListUsersInGroup"
+        ]
+        Resource = aws_cognito_user_pool.main.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "app_cognito" {
+  role       = aws_iam_role.app.name
+  policy_arn = aws_iam_policy.app_cognito.arn
 }
