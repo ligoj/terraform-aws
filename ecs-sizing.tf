@@ -4,8 +4,8 @@
 # - api: gets the rest. 'memory' is the hard limit, 'memory_reservation' the soft
 #   one; the heap is a percentage of the container memory (the JVM reads the cgroup
 #   limit), growing with the size since the non-heap overhead stays roughly constant.
-# The 32 vCPU profile exceeds Fargate (16 vCPU / 120 GB max) and is rejected by the
-# variable validation: kept as the reference for an EC2-backed capacity provider.
+# Fargate only accepts fixed task sizes. At 32 vCPU the memory choices are 60, 120 or
+# 244 GB (no 128 GB), so that profile uses 120 GB with the same 80% api ratio.
 locals {
   ecs_sizing = {
     "2" = {
@@ -41,10 +41,10 @@ locals {
       }
     }
     "32" = {
-      task = { cpu = 32768, memory = 131072, fargate = false }
+      task = { cpu = 32768, memory = 122880, fargate = true }
       ui   = { cpu = 1024, memory = 1024, memory_reservation = 512, java_memory = "-Xms128M -Xmx128M" }
       api = {
-        cpu         = 31744, memory = 130048, memory_reservation = 104000, active_processor_count = 32
+        cpu         = 31744, memory = 121856, memory_reservation = 97472, active_processor_count = 32
         java_memory = "-XX:InitialRAMPercentage=80 -XX:MaxRAMPercentage=80 -XX:+UseZGC"
       }
     }

@@ -5,7 +5,7 @@ profile  = "my-profile"
 # Force an image tag; empty (default) deploys the latest image pushed to ECR
 #ligoj_version = "4.1.0"
 
-# Sizing: vCPU only (2, 4, 8, 16); memory and JVM settings derive from it (ecs-sizing.tf)
+# Sizing: vCPU only (2, 4, 8, 16, 32); memory and JVM settings derive from it (ecs-sizing.tf)
 cpu = 2
 
 # For import phase (bulk imports), then revert

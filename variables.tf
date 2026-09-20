@@ -57,8 +57,8 @@ variable "cpu" {
   type        = number
   default     = 2
   validation {
-    condition     = contains([2, 4, 8, 16], var.cpu)
-    error_message = "cpu must be 2, 4, 8 or 16 vCPU (Fargate sizes of ecs-sizing.tf; 2 is the minimum)."
+    condition     = contains([2, 4, 8, 16, 32], var.cpu)
+    error_message = "cpu must be 2, 4, 8, 16 or 32 vCPU (Fargate sizes of ecs-sizing.tf; 2 is the minimum)."
   }
 }
 variable "container_route_private" {

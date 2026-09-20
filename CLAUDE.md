@@ -155,11 +155,11 @@ unhealthy stack has nothing to defer and nothing to fix. A partial failure usual
   the ECS tasks are stopped (off-hours schedule), since the running app's pool keeps it awake. The
   first connection after a pause waits ~15 s for the resume (Data API calls included; the bootstrap
   scripts retry). The ACU alarm treats missing data as not breaching.
-- **Sizing** (`ecs-sizing.tf`): `var.cpu` (2, 4, 8 or 16 vCPU, validated) is the only input; the profile
+- **Sizing** (`ecs-sizing.tf`): `var.cpu` (2, 4, 8, 16 or 32 vCPU, validated) is the only input; the profile
   table derives the task memory, each container's `cpu`/`memory`/`memoryReservation`, `JAVA_MEMORY`
   (ui: fixed 128M heap; api: `MaxRAMPercentage` 70→80% of its container limit, G1 then ZGC at 16 vCPU)
-  and `-XX:ActiveProcessorCount`. There is no `ram` variable. The 32 vCPU profile is documented but not
-  deployable on Fargate. tfvars carry commented "import phase" values (`cpu=4`, `aurora_min_capacity=16`).
+  and `-XX:ActiveProcessorCount`. There is no `ram` variable. Fargate only takes fixed sizes: at 32 vCPU
+  the memory is 60, 120 or 244 GB (the profile uses 120 GB, there is no 128 GB). tfvars carry commented "import phase" values (`cpu=4`, `aurora_min_capacity=16`).
 - **ECR** (`ecr.tf`): managed repositories `ligoj/ligoj-ui|api` (scan-on-push, lifecycle expiry), fed by
   the `pipeline/docker.tf` image pipeline (ligoj/ligoj@master, native arm64 build, inline buildspec).
   Image selection: empty `var.ligoj_version` (default) deploys the **digest of the most recently pushed
