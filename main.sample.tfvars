@@ -37,3 +37,6 @@ cognito_email_filter_message = "Only corporate staff can sign up to this applica
 # (web_acl_allowed_paths default, set [] to disable); IP sets restrict the sources
 #web_acl_allowed_ipset_arns = ["arn:aws:wafv2:us-east-1:123456789012:global/ipset/office/..."]
 #web_acl_secret_cookie      = "some-random-uuid" # 'waf_bypass' cookie value bypassing the IP allowlist
+
+# AWS price list cache for plugin-prov-aws: existing bucket to fill (Lambda + Step Functions)
+#prices_cache_bucket = "aws.corp.com"

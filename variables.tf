@@ -312,3 +312,9 @@ variable "ecs_schedule_timezone" {
   type        = string
   default     = "UTC"
 }
+
+variable "prices_cache_bucket" {
+  description = "Existing S3 bucket receiving the AWS price list cache (lambda_cache_prices.tf: Lambda + Step Functions retry workflow). Empty: nothing is created"
+  type        = string
+  default     = ""
+}

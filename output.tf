@@ -40,3 +40,7 @@ output "ecr_registry" {
 output "ses_identity_arn" {
   value = aws_sesv2_email_identity.main.arn
 }
+output "prices_cache_state_machine_arn" {
+  description = "Start an execution to refresh the AWS price list cache"
+  value       = one(aws_sfn_state_machine.cache_prices[*].arn)
+}
