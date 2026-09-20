@@ -275,7 +275,7 @@ variable "web_acl_allowed_ipset_arns" {
   default     = []
 }
 variable "web_acl_allowed_paths" {
-  description = "Regexes (WAFv2 syntax, at most 10) of the URI paths the application serves: anything else is blocked at the edge, for everybody. Empty: no route restriction. Default: the Ligoj UI pages, the ALB Cognito callback, the REST API, the plugin resources under /main, the static bundles and /manage/health; the rest of /manage (actuator) is deliberately absent"
+  description = "Regexes (WAFv2 syntax, at most 10) of the URI paths the application serves: anything else is blocked at the edge, for everybody. Empty: no route restriction. Default: the Ligoj UI pages, the ALB Cognito callback, the REST API, the plugin resources under /main, the static bundles and the actuator under /manage (still behind the ALB Cognito authentication)"
   type        = list(string)
   default = [
     "^/$",
@@ -284,7 +284,7 @@ variable "web_acl_allowed_paths" {
     "^/oauth2/idpresponse$",
     "^/favicon\\.ico$",
     "^/rest(/|$)",
-    "^/manage/health$",
+    "^/manage(/|$)",
     "^/main/[A-Za-z0-9._/-]+\\.(html|css|js|json|map|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot)$",
     "^/(dist|lib|assets|themes)/[A-Za-z0-9._/-]+$",
   ]
