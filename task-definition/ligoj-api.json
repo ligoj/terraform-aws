@@ -17,6 +17,10 @@
   "cpu": ${cpu},
   "environment": [
     {
+      "name": "JAVA_MEMORY",
+      "value": "${java_memory}"
+    },
+    {
       "name": "CRYPTO",
       "value": ""
     },
@@ -56,8 +60,8 @@
     }
   ],
   "dockerSecurityOptions": null,
-  "memory": null,
-  "memoryReservation": null,
+  "memory": ${memory},
+  "memoryReservation": ${memory_reservation},
   "volumesFrom": [],
   "stopTimeout": null,
   "image": "${image}",

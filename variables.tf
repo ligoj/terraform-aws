@@ -53,14 +53,13 @@ variable "desired_count" {
   default = 1
 }
 variable "cpu" {
-  description = "vCPU count of the Fargate task. Multiplied by 1024 for the task definition"
+  description = "vCPU count of the Fargate task, the only sizing input: task memory, per-container limits and JVM settings derive from it (ecs-sizing.tf)"
   type        = number
   default     = 2
-}
-variable "ram" {
-  description = "Memory of the Fargate task, in MiB"
-  type        = number
-  default     = 8192
+  validation {
+    condition     = contains([2, 4, 8, 16], var.cpu)
+    error_message = "cpu must be 2, 4, 8 or 16 vCPU (Fargate sizes of ecs-sizing.tf; 2 is the minimum)."
+  }
 }
 variable "container_route_private" {
   description = "Cognito authenticated route (path pattern), by container name"

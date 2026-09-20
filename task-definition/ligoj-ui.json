@@ -20,8 +20,12 @@
   ],
   "command": null,
   "linuxParameters": null,
-  "cpu": 0,
+  "cpu": ${cpu},
   "environment": [
+    {
+      "name": "JAVA_MEMORY",
+      "value": "${java_memory}"
+    },
     {
       "name": "CUSTOM_OPTS",
       "value": "-Dserver.servlet.register-default-servlet=true -Dsecurity.pre-auth-logout=https://${cognito_dns}${context_path}/logout?client_id=${cognito_client}&logout_uri=https://${dns}${context_path}/ -Dsecurity.pre-auth-cookies=AWSELBAuthSessionCookie-0,AWSELBAuthSessionCookie-1,AWSALB -Dsecurity.pre-auth-credentials=X-Amzn-Oidc-Accesstoken -Dsecurity.pre-auth-principal=X-Amzn-Oidc-Identity"
@@ -40,8 +44,8 @@
   "workingDirectory": null,
   "secrets": null,
   "dockerSecurityOptions": null,
-  "memory": null,
-  "memoryReservation": null,
+  "memory": ${memory},
+  "memoryReservation": ${memory_reservation},
   "volumesFrom": [],
   "stopTimeout": null,
   "image": "${image}",

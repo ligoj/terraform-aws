@@ -2,8 +2,8 @@ resource "aws_ecs_task_definition" "main" {
   family                   = var.application
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = var.cpu * 1024
-  memory                   = var.ram
+  cpu                      = local.sizing.task.cpu
+  memory                   = local.sizing.task.memory
   execution_role_arn       = aws_iam_role.task.arn
   # Task role = the identity of the RUNNING containers. Without it ECS injects no
   # AWS_CONTAINER_CREDENTIALS_RELATIVE_URI, and the Cognito plugin (which signs its
@@ -17,18 +17,25 @@ resource "aws_ecs_task_definition" "main" {
 
   container_definitions = jsonencode([
     jsondecode(templatefile("${path.module}/task-definition/ligoj-ui.json", merge(local.container_definition, {
-      image        = local.image["ligoj-ui"]
-      context_path = var.context_path
+      image              = local.image["ligoj-ui"]
+      context_path       = var.context_path
+      cpu                = local.sizing.ui.cpu
+      memory             = local.sizing.ui.memory
+      memory_reservation = local.sizing.ui.memory_reservation
+      java_memory        = local.sizing.ui.java_memory
     }))),
     jsondecode(templatefile("${path.module}/task-definition/ligoj-api.json", merge(local.container_definition, {
-      image           = local.image["ligoj-api"]
-      cpu             = var.cpu * 1024
-      nb_cpu          = var.cpu
-      db_tdp_arn      = local.db_tdp_arn
-      db_user         = local.db_user
-      db_password_arn = local.db_password_arn
-      db_host         = local.db_host
-      ligoj_plugins   = var.ligoj_plugins
+      image              = local.image["ligoj-api"]
+      cpu                = local.sizing.api.cpu
+      memory             = local.sizing.api.memory
+      memory_reservation = local.sizing.api.memory_reservation
+      java_memory        = local.sizing.api.java_memory
+      nb_cpu             = local.sizing.api.active_processor_count
+      db_tdp_arn         = local.db_tdp_arn
+      db_user            = local.db_user
+      db_password_arn    = local.db_password_arn
+      db_host            = local.db_host
+      ligoj_plugins      = var.ligoj_plugins
     })))
   ])
   volume {
