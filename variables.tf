@@ -225,8 +225,18 @@ variable "ligoj_sign_up_subscription" {
 }
 
 variable "aurora_min_capacity" {
-  type    = number
-  default = 0.5
+  description = "Minimum Aurora capacity (ACU). 0 enables scale-to-zero: the instance pauses after 'aurora_auto_pause_seconds' without connections and resumes (~15s) on the next one"
+  type        = number
+  default     = 0
+}
+variable "aurora_auto_pause_seconds" {
+  description = "Idle time before Aurora pauses, 300 to 86400 seconds. Only used when aurora_min_capacity is 0"
+  type        = number
+  default     = 300
+  validation {
+    condition     = var.aurora_auto_pause_seconds >= 300 && var.aurora_auto_pause_seconds <= 86400
+    error_message = "aurora_auto_pause_seconds must be between 300 and 86400."
+  }
 }
 variable "aurora_max_capacity" {
   type    = number

@@ -63,6 +63,8 @@ resource "aws_rds_cluster" "main" {
   serverlessv2_scaling_configuration {
     max_capacity = var.aurora_max_capacity
     min_capacity = var.aurora_min_capacity
+    # Scale to zero: only valid (and only sent) with a 0 ACU minimum
+    seconds_until_auto_pause = var.aurora_min_capacity == 0 ? var.aurora_auto_pause_seconds : null
   }
 }
 

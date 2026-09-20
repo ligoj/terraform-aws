@@ -150,7 +150,11 @@ unhealthy stack has nothing to defer and nothing to fix. A partial failure usual
   (no provider alias) — ACM for CloudFront-fronted Cognito domains is us-east-1 only.
 - **Aurora:** `var.engine_version` (e.g. `17.4`) drives the cluster and the parameter-group family
   (`aurora-postgresql17` is derived from its major). `var.db_master_user` defaults to `postgres` — `admin`
-  is a reserved word on RDS for PostgreSQL.
+  is a reserved word on RDS for PostgreSQL. **Scale to zero**: `aurora_min_capacity = 0` (default) +
+  `aurora_auto_pause_seconds` (300) pause the instance once no connection is open — in practice while
+  the ECS tasks are stopped (off-hours schedule), since the running app's pool keeps it awake. The
+  first connection after a pause waits ~15 s for the resume (Data API calls included; the bootstrap
+  scripts retry). The ACU alarm treats missing data as not breaching.
 - `var.cpu` is a vCPU **count** (multiplied by 1024 for Fargate and passed as `-XX:ActiveProcessorCount`);
   `var.ram` is MiB. tfvars files carry commented "import phase" values (higher cpu/ram, `aurora_min_capacity=16`)
   used for bulk imports, then reverted.

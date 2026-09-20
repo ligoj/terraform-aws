@@ -152,6 +152,7 @@ resource "aws_cloudwatch_metric_alarm" "aurora_acu" {
   evaluation_periods  = 3
   threshold           = 90
   comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
   dimensions = {
     DBClusterIdentifier = aws_rds_cluster.main[0].cluster_identifier
   }
