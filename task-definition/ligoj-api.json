@@ -26,7 +26,7 @@
     },
     {
       "name": "CUSTOM_OPTS",
-      "value": " -Djdbc.host=${db_host} -Djdbc.username=${db_user} -Dligoj.plugin.install=${ligoj_plugins} -Dserver.forward-headers-strategy=NATIVE -XX:ActiveProcessorCount=${nb_cpu}"
+      "value": " -Djdbc.host=${db_host} -Djdbc.username=${db_user} -Djdbc.urlparam=?reWriteBatchedInserts=true&connectTimeout=60&sslResponseTimeout=60000 -Dligoj.plugin.install=${ligoj_plugins} -Dserver.forward-headers-strategy=NATIVE -XX:ActiveProcessorCount=${nb_cpu}"
     }
   ],
   "resourceRequirements": null,
