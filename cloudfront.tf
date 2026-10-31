@@ -1,7 +1,7 @@
 # AWS managed policies: static assets are cached on the URL only, everything else is
 # passed through uncached. 'AllViewer' forwards the Host header, required both by the
-# ALB host/Cognito listener rules and by the origin TLS validation (the internal ALB
-# serves the certificate of local.dns, not of its *.elb.amazonaws.com name).
+# ALB host/Cognito listener rules and by the origin TLS validation (the ALB serves the
+# certificate of local.dns, not of its *.elb.amazonaws.com name).
 data "aws_cloudfront_cache_policy" "assets" {
   name = "Managed-CachingOptimized"
 }
@@ -12,7 +12,8 @@ data "aws_cloudfront_origin_request_policy" "all_viewer" {
   name = "Managed-AllViewer"
 }
 
-# Private path from CloudFront to the internal ALB, no public exposure of the origin
+# Private path from CloudFront to the ALB. The ALB is internet-facing (see alb.tf) but
+# its security group only admits this VPC origin, so the internet cannot reach it.
 # Address and name follow the ALB: a replaced ALB yields a NEW VPC origin
 # created next to the old one (the distribution then switches, and only then is
 # the old origin deletable). NOTE: the origin only reaches 'Deployed' once the
