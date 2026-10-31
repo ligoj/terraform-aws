@@ -4,8 +4,8 @@ resource "aws_efs_file_system" "main" {
   tags           = local.tags
 }
 
-# The Ligoj images run as uid/gid 1001 with a read-only root filesystem: the
-# access point forces ownership so /home/ligoj is writable by the container
+# The Ligoj images run as uid/gid 1001: the access point forces ownership so
+# /home/ligoj is writable by the container
 resource "aws_efs_access_point" "ligoj" {
   file_system_id = aws_efs_file_system.main.id
   tags           = merge(local.tags, { "Name" = "${local.name}-ligoj" })
