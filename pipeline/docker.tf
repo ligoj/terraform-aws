@@ -35,6 +35,14 @@ resource "aws_codebuild_project" "docker" {
               PY
               )
             - echo "Building version $${VERSION} (commit $${CODEBUILD_RESOLVED_SOURCE_VERSION})"
+            # Zstd layers need a BuildKit builder of its own: the default one only exports gzip
+            - docker buildx create --name zstd --driver docker-container --use
+            # A single image manifest, no attestation: the main stack deploys the most recently
+            # pushed manifest of the repository (data.aws_ecr_image), which must be the image
+            - COMMON_ARGS="--provenance=false --sbom=false --build-arg BUILDPLATFORM=linux/arm64 --build-arg TARGETPLATFORM=linux/arm64 --build-arg GIT_COMMIT=$${CODEBUILD_RESOLVED_SOURCE_VERSION} --build-arg GIT_BRANCH=$${APP_BRANCH} --build-arg FLAT_CLASSPATH=true"
+            # Level 3: higher levels only shrink the image further at the cost of a slower pull.
+            # force-compression also converts the gzip layers of the base images
+            - ZSTD_OUTPUT="type=image,push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true"
         build:
           commands:
             # Activate the build preparation script: sourced by the Dockerfile builder stage, it
@@ -42,19 +50,16 @@ resource "aws_codebuild_project" "docker" {
             # truststore, installed as <ligoj.home>/plugin-vendors.p12 at first startup. Without
             # it, signed plugins show as UNTRUSTED instead of VERIFIED.
             - cp app-api/prepare-build-sample.sh app-api/prepare-build.sh
-            # BUILDPLATFORM/TARGETPLATFORM are only auto-filled by buildx: set them explicitly
-            - docker build --build-arg BUILDPLATFORM=linux/arm64 --build-arg TARGETPLATFORM=linux/arm64 --build-arg GIT_COMMIT="$${CODEBUILD_RESOLVED_SOURCE_VERSION}" --build-arg GIT_BRANCH="$${APP_BRANCH}" --build-arg FLAT_CLASSPATH=true -t "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" -f app-api/Dockerfile app-api/
+            # Loaded into the local daemon for the check below, the push comes later
+            - docker buildx build $${COMMON_ARGS} --load -t "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" -f app-api/Dockerfile app-api/
             # Fail early if the vendors truststore did not make it into the image
             - docker run --rm --entrypoint ls "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" /usr/local/ligoj/plugin-vendors-default.p12
-            - docker build --build-arg BUILDPLATFORM=linux/arm64 --build-arg TARGETPLATFORM=linux/arm64 --build-arg GIT_COMMIT="$${CODEBUILD_RESOLVED_SOURCE_VERSION}" --build-arg GIT_BRANCH="$${APP_BRANCH}" --build-arg FLAT_CLASSPATH=true -t "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${VERSION}" -f app-ui/Dockerfile app-ui/
-            - docker tag "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" "$${ECR_REGISTRY}/ligoj/ligoj-api:$${APP_BRANCH}"
-            - docker tag "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${VERSION}" "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${APP_BRANCH}"
-        post_build:
-          commands:
-            - docker push "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}"
-            - docker push "$${ECR_REGISTRY}/ligoj/ligoj-api:$${APP_BRANCH}"
-            - docker push "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${VERSION}"
-            - docker push "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${APP_BRANCH}"
+            - docker buildx build $${COMMON_ARGS} --output type=cacheonly -f app-ui/Dockerfile app-ui/
+            # Both images are built and the checks passed: push them, recompressed from the cache.
+            # Not in post_build: it also runs after a failed build, and these commands would then
+            # build and push the failed image.
+            - docker buildx build $${COMMON_ARGS} --output "$${ZSTD_OUTPUT}" -t "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" -t "$${ECR_REGISTRY}/ligoj/ligoj-api:$${APP_BRANCH}" -f app-api/Dockerfile app-api/
+            - docker buildx build $${COMMON_ARGS} --output "$${ZSTD_OUTPUT}" -t "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${VERSION}" -t "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${APP_BRANCH}" -f app-ui/Dockerfile app-ui/
     EOT
   }
 
