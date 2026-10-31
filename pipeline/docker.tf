@@ -43,10 +43,10 @@ resource "aws_codebuild_project" "docker" {
             # it, signed plugins show as UNTRUSTED instead of VERIFIED.
             - cp app-api/prepare-build-sample.sh app-api/prepare-build.sh
             # BUILDPLATFORM/TARGETPLATFORM are only auto-filled by buildx: set them explicitly
-            - docker build --build-arg BUILDPLATFORM=linux/arm64 --build-arg TARGETPLATFORM=linux/arm64 --build-arg GIT_COMMIT="$${CODEBUILD_RESOLVED_SOURCE_VERSION}" --build-arg GIT_BRANCH="$${APP_BRANCH}" -t "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" -f app-api/Dockerfile app-api/
+            - docker build --build-arg BUILDPLATFORM=linux/arm64 --build-arg TARGETPLATFORM=linux/arm64 --build-arg GIT_COMMIT="$${CODEBUILD_RESOLVED_SOURCE_VERSION}" --build-arg GIT_BRANCH="$${APP_BRANCH}" --build-arg FLAT_CLASSPATH=true -t "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" -f app-api/Dockerfile app-api/
             # Fail early if the vendors truststore did not make it into the image
             - docker run --rm --entrypoint ls "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" /usr/local/ligoj/plugin-vendors-default.p12
-            - docker build --build-arg BUILDPLATFORM=linux/arm64 --build-arg TARGETPLATFORM=linux/arm64 --build-arg GIT_COMMIT="$${CODEBUILD_RESOLVED_SOURCE_VERSION}" --build-arg GIT_BRANCH="$${APP_BRANCH}" -t "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${VERSION}" -f app-ui/Dockerfile app-ui/
+            - docker build --build-arg BUILDPLATFORM=linux/arm64 --build-arg TARGETPLATFORM=linux/arm64 --build-arg GIT_COMMIT="$${CODEBUILD_RESOLVED_SOURCE_VERSION}" --build-arg GIT_BRANCH="$${APP_BRANCH}" --build-arg FLAT_CLASSPATH=true -t "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${VERSION}" -f app-ui/Dockerfile app-ui/
             - docker tag "$${ECR_REGISTRY}/ligoj/ligoj-api:$${VERSION}" "$${ECR_REGISTRY}/ligoj/ligoj-api:$${APP_BRANCH}"
             - docker tag "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${VERSION}" "$${ECR_REGISTRY}/ligoj/ligoj-ui:$${APP_BRANCH}"
         post_build:
