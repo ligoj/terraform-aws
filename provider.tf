@@ -29,4 +29,11 @@ terraform {
 provider "aws" {
   region  = var.region
   profile = var.profile
+
+  # Dormeto (off-hours sleep/wake product) tags the resources it manages, among them the
+  # ECS service and the listener rules ('dormeto:workload', 'dormeto:tagged', ...): an
+  # apply must not remove these tags, Terraform does not own them.
+  ignore_tags {
+    key_prefixes = ["dormeto:"]
+  }
 }
