@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A single-root Terraform configuration (no modules) that deploys [Ligoj](https://github.com/ligoj/ligoj)
 (4.x, PostgreSQL-based) on AWS: Fargate behind an ALB with Cognito authentication, Aurora PostgreSQL
 Serverless v2, EFS, and three Lambdas. Everything lives in the repo root — one `.tf` file per AWS concern.
-Requires Terraform >= 1.5 and AWS provider ~> 6.0 (declared in `provider.tf` along with `random`,
-`archive`, `external`).
+Requires Terraform >= 1.10 and AWS provider ~> 6.0 (declared in `provider.tf` along with `random`,
+`archive`, and `external`, which no resource uses any more).
 
 ## Commands
 
@@ -31,18 +31,22 @@ terraform apply -var-file="main-private.saas.tfvars" -auto-approve
 
 # Iterate on one piece without touching the rest
 terraform apply -var-file="..." -target=aws_lambda_function.post_confirmation
+
+# The pipeline sub-project is validated separately
+terraform -chdir=pipeline init -backend=false && terraform -chdir=pipeline validate
 ```
 
 `main.sample.tfvars` is the tracked template. `main-private.*.tfvars` are gitignored per-tenant files
-(two exist locally: `saas`, `enedis`) — never commit them.
+(two exist locally: `saas`, `enedis`) — never commit them. `README.*.md` is gitignored too:
+`README.saas.md` is a local-only tenant runbook.
 
 `pipeline/` is a **standalone sub-project** (own state key, own `terraform init`) provisioning a
-CodePipeline V2 + CodeBuild pair that plans/applies the root stack on `main` branch pushes — see
+CodePipeline V2 + CodeBuild pair that plans/applies the root stack (a push trigger on `main` is configured, but no
+run has ever started that way: deploy with `release.py` or start the pipeline explicitly) — see
 `pipeline/README.md` for setup (GitHub connection handshake, CI tfvars uploaded to S3 without
 `profile`). Its buildspecs (`pipeline/buildspec-*.yml`) are read from the source artifact at build
 time. The root stack treats a null/empty `var.profile` as "ambient credentials" so it runs both
-locally (profile) and in CodeBuild (role) — keep it that way when touching `local-exec`/`external`
-commands.
+locally (profile) and in CodeBuild (role) — keep it that way when touching `local-exec` commands.
 
 Required on the machine running Terraform, because of the `local-exec` provisioners: `aws` CLI (with
 the named profile), `jq`, `bash`.
@@ -68,16 +72,16 @@ old origin → old ALB); a VPC origin also never reaches `Deployed` until its AL
 **Replacing the ALB takes two applies**: create_before_destroy propagates to the listener rules, whose
 first creation fails with `TargetGroupAssociationLimit` (the target group is still held by the old
 rules) — the site answers 403 until the second apply converges. Rare (scheme/subnet changes only). CloudFront cache behaviors:
-`/rest*` and the default (authenticated app, OAuth callback) use `CachingDisabled`; `/themes/*` and
-`/favicon.ico` use `CachingOptimized`. Every behavior uses the `AllViewer` origin-request policy — the
+`/rest*` and the default (authenticated app, OAuth callback) use `CachingDisabled`; `/lib/*`, `/dist/*`,
+`/assets/*`, `/themes/*` and `/favicon.ico` use `CachingOptimized`. Every behavior uses the `AllViewer` origin-request policy — the
 forwarded `Host` header is what makes the ALB host/Cognito rules match AND what lets CloudFront validate
-the origin TLS cert (the internal ALB serves the `local.dns` cert, not its `*.elb.amazonaws.com` name);
+the origin TLS cert (the ALB serves the `local.dns` cert, not its `*.elb.amazonaws.com` name);
 never drop it. The ALB SG only admits the `CloudFront-VPCOrigins-Service-SG` (VPC-origin traffic does NOT source
 from the ENI's in-VPC IP — a VPC-CIDR rule silently drops it). The CloudFront and
 ALB certs cover the same domain, so the CloudFront cert validation reuses the ALB validation records.
 Optional edge controls: `cloudfront_allowed_countries` (geo allowlist) and the WAF (`waf.tf`): an
 existing `web_acl_arn`, or a generated Web ACL when `web_acl_allowed_paths` (URI-path regex allowlist of
-the routes the app serves — default on, `/manage/health` allowed, the rest of `/manage` excluded on purpose) and/or `web_acl_allowed_ipset_arns`
+the routes the app serves — default on, the actuator under `/manage` included: the ALB does not exempt it from the API-key rules below) and/or `web_acl_allowed_ipset_arns`
 (list of us-east-1 CLOUDFRONT-scope IP sets; empty = no IP restriction; `web_acl_secret_cookie` =
 `waf_bypass` cookie bypass) are set. WAF bills per rule, so the policy is a SINGLE allow rule —
 `known route AND (IP set… OR cookie)` — with a BLOCK default; `local.waf_shape` picks the statement
@@ -86,14 +90,24 @@ route must be added to `web_acl_allowed_paths` or it is 403 at the edge.
 The ALB HTTPS listener defaults to a 403 fixed response; traffic is only forwarded by listener rules,
 keyed by container name (`for_each` over the `container_*` maps) in priority bands defined in `alb.tf`:
 
-- 10+ `public` — path allowlist (`/themes/*`, `/logout.html`, …), no auth
+- 10+ `public` — path allowlist (`/themes/*`, `/logout.html`, …), no auth; chunked into one rule per 4
+  paths (an ALB rule takes 5 condition values, the host header included)
 - 20+ `public_header` — API access via `x-api-key` header
 - 30+ `public_query` — API access via `api-key` + `api-user` query parameters
 - 50+ `private` — `authenticate-cognito` action, then forward (everything else, `*`)
 
+The two API-key bands have **no path condition and match any value** (`x-api-key:*`): they skip Cognito for
+every route, `/manage` included, and only the application authenticates those requests.
+
 Authenticated requests reach the `ligoj-ui` container with `X-Amzn-Oidc-Identity` / `X-Amzn-Oidc-Accesstoken`
 headers; `task-definition/ligoj-ui.json` wires those into Ligoj's `security.pre-auth-*` options. **The Ligoj
-login is the Cognito `sub` (UUID), not the email.**
+login is the Cognito `sub` (UUID), not the email.** The target group health check uses `/manage/health` (5 s interval, 2 successes, the AWS minimum): the
+UI whitelists that one anonymous path and proxies it to the API, so a target only gets traffic once both
+containers are up, and the two start in parallel (no `dependsOn`, which would add the UI boot to the wait). This
+needs a Ligoj image whitelisting the path: on an older image the check gets a 401 and the rollout fails.
+`health_check_grace_period_seconds` (120 s) covers a normal boot of about 50 s, and the ALB check limits how slow a
+boot can be, whatever the `ligoj-api` container check allows (`/ligoj-api/manage/health`, `startPeriod` 300 s). An API
+that stays unhealthy gets the whole task replaced, for example during a database outage. The UI container check is still a no-op (`exit 0`).
 
 **One task, two containers.** `ecs-task-definition.tf` renders both `task-definition/*.json` templates
 (`jsonencode(jsondecode(templatefile(...)))`) into a single Fargate task. Only `ligoj-ui` is exposed (8080,
@@ -108,7 +122,9 @@ filesystem** (Jetty temp dirs in `/tmp`, the UI's startup `sed` of the SPA conte
 do not set `readonlyRootFilesystem`, and never mount a Fargate ephemeral volume over `/tmp`
 (Fargate mounts them root-owned 0755, unwritable for uid 1001). Ligoj 4.x defaults to PostgreSQL
 (`jdbc.vendor=postgresql`, port 5432, bundled `org.postgresql` driver), so the task definition only
-overrides `jdbc.host` / `jdbc.username` (plus `JDBC_PASSWORD` via Spring relaxed env binding). The
+overrides `jdbc.host` / `jdbc.username` / `jdbc.urlparam` (plus `JDBC_PASSWORD` via Spring relaxed env
+binding). `jdbc.urlparam` replaces Ligoj's default, so it must keep `reWriteBatchedInserts=true`; it adds
+`connectTimeout=60` (seconds) and `sslResponseTimeout=60000` (milliseconds) to outlast an Aurora resume. The
 `container_*` variables are maps keyed by container name — only `ligoj-ui` has entries.
 
 **Bootstrap chain (the fragile part).** Terraform cannot reach the private Aurora cluster over TCP, so
@@ -144,13 +160,14 @@ unhealthy stack has nothing to defer and nothing to fix. A partial failure usual
 ## Conventions and gotchas
 
 - **Naming/tagging:** every resource is `${var.application}-${var.environment}` via `local.name`, tagged from
-  `local.tags`. `local.*` in `main.tf` derives `dns` and all `cognito_*` fallbacks when the variables are left
+  `local.tags`. Tags prefixed `dormeto:` belong to the Dormeto product and are ignored (`ignore_tags` in `provider.tf`). `local.*` in `main.tf` derives `dns` and all `cognito_*` fallbacks when the variables are left
   empty — resources reference the `local.` values, never the `var.cognito_*` ones directly.
 - **us-east-1:** the Cognito custom-domain certificate uses the provider v6 per-resource `region = "us-east-1"`
   (no provider alias) — ACM for CloudFront-fronted Cognito domains is us-east-1 only.
 - **Aurora:** `var.engine_version` (e.g. `17.4`) drives the cluster and the parameter-group family
   (`aurora-postgresql17` is derived from its major). `var.db_master_user` defaults to `postgres` — `admin`
-  is a reserved word on RDS for PostgreSQL. **Scale to zero**: `aurora_min_capacity = 0` (default) +
+  is a reserved word on RDS for PostgreSQL. `var.enabled = false` skips the cluster and the user
+  bootstrap, which is why those resources use `count` and are referenced as `main[0]`. **Scale to zero**: `aurora_min_capacity = 0` (default) +
   `aurora_auto_pause_seconds` (300) pause the instance once no connection is open — in practice while
   the ECS tasks are stopped (off-hours schedule), since the running app's pool keeps it awake. The
   first connection after a pause waits ~15 s for the resume (Data API calls included; the bootstrap
@@ -161,7 +178,10 @@ unhealthy stack has nothing to defer and nothing to fix. A partial failure usual
   and `-XX:ActiveProcessorCount`. There is no `ram` variable. Fargate only takes fixed sizes: at 32 vCPU
   the memory is 60, 120 or 244 GB (the profile uses 120 GB, there is no 128 GB). tfvars carry commented "import phase" values (`cpu=4`, `aurora_min_capacity=16`).
 - **ECR** (`ecr.tf`): managed repositories `ligoj/ligoj-ui|api` (scan-on-push, lifecycle expiry), fed by
-  the `pipeline/docker.tf` image pipeline (ligoj/ligoj@master, native arm64 build, inline buildspec).
+  the `pipeline/docker.tf` image pipeline (ligoj/ligoj@master, native arm64 build, `FLAT_CLASSPATH=true` for a faster startup, zstd layers through a
+  `docker-container` Buildx builder for a faster pull, inline buildspec: a change only takes effect after an apply of
+  `pipeline/`, the deploy pipeline does not apply it). Keep `--provenance=false --sbom=false`: attestations would add
+  manifests to the repository, and `most_recent` below must find the image.
   Image selection: empty `var.ligoj_version` (default) deploys the **digest of the most recently pushed
   ECR image** (`data.aws_ecr_image` `most_recent`); a non-empty value forces `docker_repository` + tag.
   Fresh accounts must run the docker pipeline once before the first main apply (empty repo fails the
@@ -187,15 +207,22 @@ unhealthy stack has nothing to defer and nothing to fix. A partial failure usual
   Scaling 6-field crons, `ecs_schedule_timezone`) scale the ECS service to 0 and back to `desired_count`
   through a scalable target — no Lambda. An apply during the stopped window restarts the tasks until the
   next stop; the ECS alarms use `notBreaching` on missing data so a stopped service does not flap them.
+- **AWS price cache** (`lambda_cache_prices.tf` + `lambda_cache_prices.py`, off unless
+  `prices_cache_bucket` names an existing bucket): a Python Lambda mirrors the public AWS offers
+  (OnDemand/RI, every Savings Plans offer discovered from the root index, spot) for `plugin-prov-aws`.
+  A Step Functions task invokes it up to 3 times (`Retry` `States.ALL`, 2 retries): the function raises
+  when a copy failed or hits the 15 min limit, and skips the files already copied today, so a retry resumes.
+  Nothing in the stack schedules it: start the state machine from the `prices_cache_state_machine_arn` output.
 - **Observability** (`observability.tf`): ALB access logs to an S3 bucket expiring after
-  `var.log_retention_days` (also the CloudWatch retention for ECS/RDS logs), ECS Container Insights,
+  `var.log_retention_days` (also the CloudWatch retention for ECS/RDS logs; the Lambda log groups use
+  the separate `var.expiration`), ECS Container Insights,
   Aurora Performance Insights (7-day free tier), and CloudWatch alarms (ALB 5xx, unhealthy targets,
   ECS CPU/memory, Aurora ACU, CloudFront 5xx rate) publishing to an SNS topic — set `var.alarm_email`
   to subscribe.
 - The helper script writes `ligoj_new_user-<user>.log` into the repo root (gitignored).
 - `.terraform.lock.hcl` is gitignored (the `**.hcl` pattern), so provider pinning is local-only; `~>`
   constraints in `provider.tf` are the real bound.
-- The two Lambda zips are built into `.build/` (gitignored), NOT `.terraform/`: the pipeline's plan
+- The Lambda zips are built into `.build/` (gitignored), NOT `.terraform/`: the pipeline's plan
   artifact excludes `.terraform/` but must carry the zips to the apply stage. Keep archive `output_path`s
   there.
 - Both backends use S3 native locking (`use_lockfile = true`, hence Terraform >= 1.10). Never run a
