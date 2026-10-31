@@ -71,14 +71,14 @@
   "disableNetworking": null,
   "interactive": null,
   "healthCheck": {
-    "retries": 3,
+    "retries": 5,
     "command": [
       "CMD-SHELL",
-      "exit 0"
+      "curl --fail -s -o /dev/null http://localhost:8081/ligoj-api/manage/health || exit 1"
     ],
     "timeout": 5,
-    "interval": 30,
-    "startPeriod": null
+    "interval": 10,
+    "startPeriod": 300
   },
   "essential": true,
   "links": null,
