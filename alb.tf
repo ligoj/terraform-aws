@@ -74,10 +74,14 @@ resource "aws_lb_target_group" "main" {
     protocol = var.container_protocol
     # The root of the authenticated app may answer with a redirect
     matcher = "200-399"
-    # A new target gets traffic after 10-20 s instead of the default 60-90 s. The UI only
-    # starts once the API is healthy (dependsOn in task-definition/ligoj-ui.json)
-    interval          = 10
-    healthy_threshold = 2
+    # The fastest AWS allows: a target gets traffic 5-10 s after the check first passes.
+    # The default path goes through the UI to the API (variables.tf), so both are up by
+    # then. The timeout must stay below the interval; 6 failures keep about 30 s of
+    # tolerance before a target is marked unhealthy.
+    interval            = 5
+    timeout             = 4
+    healthy_threshold   = 2
+    unhealthy_threshold = 6
   }
 }
 

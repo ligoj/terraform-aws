@@ -86,8 +86,9 @@ variable "container_health" {
   description = "Health check path, by container name"
   type        = map(string)
   default = {
-    # A pre-auth whitelisted static: '/' itself answers 401 to anonymous checks
-    "ligoj-ui" = "/favicon.ico"
+    # Anonymous, proxied by the UI to the API: only passes once both containers are up.
+    # '/' itself answers 401 to anonymous checks. Requires an image with the whitelisted path
+    "ligoj-ui" = "/manage/health"
   }
 }
 variable "container_route_query" {

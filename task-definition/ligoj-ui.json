@@ -51,12 +51,7 @@
   "image": "${image}",
   "startTimeout": null,
   "firelensConfiguration": null,
-  "dependsOn": [
-    {
-      "containerName": "ligoj-api",
-      "condition": "HEALTHY"
-    }
-  ],
+  "dependsOn": null,
   "disableNetworking": null,
   "interactive": null,
   "healthCheck": {
