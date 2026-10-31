@@ -1,7 +1,8 @@
-# Private repositories for the Ligoj images. They start EMPTY: push the images
-# (or replicate them from Docker Hub) before pointing 'docker_repository' at the
-# 'ecr_registry' output. Repository names match the image paths hardcoded in
-# task-definition/*.json ('ligoj/ligoj-ui', 'ligoj/ligoj-api').
+# Private repositories for the Ligoj images, fed by the image pipeline of
+# pipeline/docker.tf. They start EMPTY: run that pipeline once before the first apply
+# of this stack, the default empty 'ligoj_version' reads the latest pushed digest and
+# fails on an empty repository. 'docker_repository' only applies to a forced
+# 'ligoj_version'. Repository names match the image paths built in local.image below.
 resource "aws_ecr_repository" "main" {
   for_each             = toset(["ligoj-ui", "ligoj-api"])
   name                 = "ligoj/${each.key}"
