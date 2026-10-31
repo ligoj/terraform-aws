@@ -74,6 +74,10 @@ resource "aws_lb_target_group" "main" {
     protocol = var.container_protocol
     # The root of the authenticated app may answer with a redirect
     matcher = "200-399"
+    # A new target gets traffic after 10-20 s instead of the default 60-90 s. The UI only
+    # starts once the API is healthy (dependsOn in task-definition/ligoj-ui.json)
+    interval          = 10
+    healthy_threshold = 2
   }
 }
 
