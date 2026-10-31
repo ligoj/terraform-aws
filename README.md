@@ -5,7 +5,7 @@
 This Terraform configuration creates an AWS infrastructure running Ligoj with HA.
 The related services are:
 - Fargate
-- Athena serverless
+- Aurora serverless
 - ALB
 - WAF
 - Cognito
